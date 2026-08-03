@@ -38,9 +38,12 @@ oversized numerals, generous radii, separated pill rows and a floating tab bar.
 A light theme cannot carry that palette, so there isn't one — the app ignores the
 system light/dark setting rather than shipping a washed-out second skin.
 
-Type is `ui-rounded`, which resolves to SF Pro Rounded on Apple hardware. It is
-the geometric, friendly cut the layout is drawn for and costs no download, which
-matters for an app that has to work offline.
+Type is Plus Jakarta Sans — geometric and tight, with just enough humanist cut to
+avoid reading as generic. One variable file covers the whole 200–800 weight axis in
+27 kB, vendored into `fonts/` and precached, so nothing is fetched from a CDN and it
+works offline like everything else. `fonts/` has to be in the workflow's staging
+list; the step now fails the build if the file is missing rather than shipping a
+site that silently falls back.
 
 The three figures — Today's stat tiles, Plan's column chart, Shop's donut — are
 hand-built SVG and CSS in `js/charts.js`. No chart library.
@@ -154,6 +157,17 @@ by impersonating two users inside a rolled-back transaction:
 | a caller holding only the publishable key can see anything | no |
 
 The `service_role` key has none of those protections and must never be committed.
+
+### Signing in on iOS
+
+Two ways in, because the obvious one is unreliable on a phone. Tapping the emailed
+link opens Safari, and a Home Screen web app does not necessarily share Safari's
+storage — so the link can sign the *browser* in while the installed app still shows
+signed out. The account block therefore also takes the link pasted in as text,
+which keeps the exchange inside whichever context you are actually looking at.
+
+Either way, Today's top strip says plainly whether you are signed in, so it never
+has to be guessed at.
 
 **One manual step remains.** Sign-in links will not return to the app until the
 site is on the allow-list: Supabase dashboard → Authentication → URL Configuration

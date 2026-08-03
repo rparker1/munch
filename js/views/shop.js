@@ -69,12 +69,13 @@ export default {
             ${donut({
               caption: 'Still to get',
               total: String(list.outstanding),
-              segments: aisles.map(a => ({ value: a.value, colour: a.colour, label: `${a.value} ${a.label.toLowerCase()}` })),
+              segments: aisles.map(a => ({ value: a.value, colour: a.colour })),
             })}
-            <div style="margin-top:24px">
+            <div style="margin-top:22px">
               ${statbars(aisles.slice(0, 3).map(a => ({
                 label: a.label,
-                figure: `${Math.round((a.value / list.outstanding) * 100)}%`,
+                figure: `${a.value}`,
+                sub: `${Math.round((a.value / list.outstanding) * 100)}%`,
                 pct: (a.value / list.outstanding) * 100,
                 colour: a.colour,
               })))}

@@ -154,7 +154,8 @@ function openSettings() {
             </div>
           </div>
           <button class="btn btn--ghost btn--sm btn--block" type="button" data-export>${icon('share')}Export everything</button>
-          <button class="btn btn--danger btn--sm btn--block" type="button" data-reset>${icon('refresh')}Start again from scratch</button>
+          <button class="btn btn--ghost btn--sm btn--block" type="button" data-seed>${icon('spark')}Load the sample data</button>
+          <button class="btn btn--danger btn--sm btn--block" type="button" data-reset>${icon('trash')}Clear everything</button>
         </div>
 
         <p class="field__hint" style="text-align:center;margin-top:18px">
@@ -209,18 +210,42 @@ function openSettings() {
         }
       });
 
-      root.querySelector('[data-reset]').addEventListener('click', () => {
+      root.querySelector('[data-seed]').addEventListener('click', () => {
         confirmSheet({
-          title: 'Start again?',
-          message: 'Your stock, plan and list are wiped and replaced with the sample data the app ships with.',
-          confirmLabel: 'Wipe and reset',
-          danger: true,
+          title: 'Load the sample data?',
+          message: 'This replaces whatever is here now with the example stock, meals and list — '
+            + 'handy for a look round, not for real use.',
+          confirmLabel: 'Load samples',
           run() {
             store.resetAll({ seed: true });
             closeSheet();
+            ctx.refresh();
+            toast('Sample data loaded', {
+              iconName: 'spark',
+              action: { label: 'Undo', run: () => { store.undo(); ctx.refresh(); } },
+            });
+          },
+        });
+      });
+
+      root.querySelector('[data-reset]').addEventListener('click', () => {
+        const signedIn = sync.snapshot().user;
+        confirmSheet({
+          title: 'Clear everything?',
+          message: 'Your stock, meals, shopping list and saved meals are all removed, leaving the app '
+            + 'empty. Where you keep things is kept.'
+            + (signedIn ? ' This clears your account too, on every device.' : ''),
+          confirmLabel: 'Clear everything',
+          danger: true,
+          run() {
+            store.resetAll({ seed: false });
+            closeSheet();
             navigate('today');
             ctx.refresh();
-            toast('Reset', { iconName: 'refresh', action: { label: 'Undo', run: () => { store.undo(); ctx.refresh(); } } });
+            toast('Cleared', {
+              iconName: 'trash',
+              action: { label: 'Undo', run: () => { store.undo(); ctx.refresh(); } },
+            });
           },
         });
       });
@@ -269,6 +294,16 @@ function accountBlock() {
         <button class="btn btn--sm btn--block" type="button" data-signin style="margin-top:4px">
           ${icon('share')}Email me a sign-in link
         </button>
+        <div class="divider" style="margin:14px 4px"></div>
+        <span class="field__hint" style="padding:0">
+          Tapping the link opens Safari, which on iOS can be a different place from
+          your home-screen app — so if it signed in the browser but not here, paste
+          the link itself in below instead.
+        </span>
+        ${textInput({ name: 'pasted', value: '', placeholder: 'Paste the link from the email' })}
+        <button class="btn btn--ghost btn--sm btn--block" type="button" data-paste>
+          ${icon('check')}Sign in with a pasted link
+        </button>
       </div>`;
   }
 
@@ -311,6 +346,25 @@ function bindAccount(root, reopen) {
     } catch (err) {
       btn.disabled = false;
       toast(err.message || 'Could not send the link', { iconName: 'alert', ms: 5000 });
+    }
+  });
+
+  root.querySelector('[data-paste]')?.addEventListener('click', async () => {
+    const btn = root.querySelector('[data-paste]');
+    const text = root.querySelector('[name=pasted]').value;
+    btn.disabled = true;
+    try {
+      await cloud.signInWithPastedLink(text);
+      const user = cloud.currentUser();
+      store.useAccount(user.id);
+      sync.start();
+      closeSheet();
+      navigate('today');
+      ctx.refresh();
+      toast(`Signed in as ${user.email || 'your account'}`, { iconName: 'check', ms: 4000 });
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message || 'Could not sign in', { iconName: 'alert', ms: 6000 });
     }
   });
 
@@ -418,6 +472,7 @@ sync.subscribe(() => renderTabs());
 
 if (authReturn?.status === 'signed-in') {
   toast(`Signed in as ${authReturn.user.email || 'your account'}`, { iconName: 'check', ms: 4000 });
+  render();
 } else if (authReturn?.status === 'error') {
   toast(authReturn.message, { iconName: 'alert', ms: 6000 });
 }

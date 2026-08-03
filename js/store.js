@@ -805,12 +805,31 @@ function prune() {
   }
 }
 
-export function resetAll({ seed = true } = {}) {
-  snapshot('Everything reset');
+/**
+ * Empty everything: stock, meals, list, saved meals. Places are kept, since an
+ * empty app with nowhere to put anything is not a useful starting point.
+ *
+ * Defaults to leaving it genuinely empty. It used to reseed the sample data,
+ * which meant that on an untouched app the screen looked identical afterwards and
+ * the button appeared not to work at all.
+ *
+ * commit() diffs the records, so every wiped item becomes a tombstone — which is
+ * what carries the wipe up to a signed-in account rather than letting the next
+ * pull put it all back.
+ */
+export function resetAll({ seed = false } = {}) {
+  snapshot(seed ? 'Sample data loaded' : 'Everything cleared');
+  const keepLocations = state.locations.length ? structuredClone(state.locations) : null;
+  const settings = { ...state.settings };
+  const syncedAt = state.syncedAt;
+
   state = emptyState();
-  defaultLocations();
+  state.syncedAt = syncedAt;
+  state.settings = { ...settings, seeded: true };
+  if (keepLocations) state.locations = keepLocations;
+  else defaultLocations();
+
   if (seed) seedDemo();
-  state.settings.seeded = true;
   commit();
 }
 

@@ -31,7 +31,14 @@ jobs:
       - name: Stage the site
         run: |
           mkdir -p _site
-          cp -R index.html manifest.webmanifest sw.js .nojekyll css js icons _site/
+          cp -R index.html manifest.webmanifest sw.js .nojekyll css js icons fonts _site/
+
+          # Fail loudly rather than shipping a site with a missing stylesheet,
+          # module or webfont.
+          for required in index.html css/app.css js/app.js sw.js \
+                          fonts/plus-jakarta-sans-latin-var.woff2; do
+            [ -f "_site/$required" ] || { echo "::error::_site/$required missing"; exit 1; }
+          done
 
           # Stamp the build so the service worker can defeat the HTTP cache.
           # Pages serves assets with a fixed Cache-Control: max-age=600 and a
