@@ -1,15 +1,36 @@
 /* ==========================================================================
-   Shop — the list. Plan-derived lines and hand-added lines side by side,
-   grouped by aisle so one pass round the shop covers it.
+   Shop — the outstanding count as a donut split by aisle, then the list itself
+   grouped so one lap of the shop covers it.
    ========================================================================== */
 
 import * as store from '../store.js';
+import { CATEGORIES } from '../store.js';
 import { esc, qtyLabel, niceDate, plural } from '../util.js';
 import { icon } from '../icons.js';
-import { pill, emptyState, toast, confirmSheet } from '../ui.js';
+import { donut, statbars } from '../charts.js';
+import { emptyState, toast, confirmSheet } from '../ui.js';
 import { openShopEditor, openLinePeek, openPutAwayAll } from '../editors/shop.js';
 
 const ui = { hideDone: false };
+
+/** Outstanding lines per aisle, biggest first, tail folded into "Other". */
+function byAisle(lines) {
+  const open = lines.filter(l => !l.done);
+  const counts = CATEGORIES
+    .map(c => ({ ...c, value: open.filter(l => l.category === c.id).length }))
+    .filter(c => c.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (counts.length <= 4) return counts;
+  const head = counts.slice(0, 3);
+  const tail = counts.slice(3);
+  return [...head, {
+    id: 'rest',
+    label: 'Other aisles',
+    colour: '#8F8F8F',
+    value: tail.reduce((n, c) => n + c.value, 0),
+  }];
+}
 
 export default {
   id: 'shop',
@@ -27,42 +48,54 @@ export default {
     <button class="iconbtn iconbtn--primary" type="button" data-act="add" aria-label="Add to list">${icon('plus')}</button>`,
 
   badge() {
-    const { outstanding } = store.shoppingList();
-    return outstanding || null;
+    return store.shoppingList().outstanding || null;
   },
 
   render(root, ctx) {
     const list = store.shoppingList();
     const doneN = list.total - list.outstanding;
-    const fromPlan = list.all.filter(l => l.kind === 'plan').length;
+    const fromPlan = list.all.filter(l => l.kind === 'plan' && !l.done).length;
     const clearable = store.clearableCount();
+    const aisles = byAisle(list.all);
 
     const groups = ui.hideDone
       ? list.groups.map(g => ({ ...g, lines: g.lines.filter(l => !l.done) })).filter(g => g.lines.length)
       : list.groups;
 
     root.innerHTML = `
-      ${list.total ? `
+      ${list.outstanding ? `
         <section class="section">
-          <div class="card summary">
-            <div style="flex:1">
-              <div class="summary__n">${list.outstanding}</div>
-              <div class="summary__t">
-                still to get${fromPlan ? ` · ${fromPlan} from the plan` : ''}
-              </div>
+          <div class="card" style="padding:20px 18px 22px">
+            ${donut({
+              caption: 'Still to get',
+              total: String(list.outstanding),
+              segments: aisles.map(a => ({ value: a.value, colour: a.colour, label: `${a.value} ${a.label.toLowerCase()}` })),
+            })}
+            <div style="margin-top:24px">
+              ${statbars(aisles.slice(0, 3).map(a => ({
+                label: a.label,
+                figure: `${Math.round((a.value / list.outstanding) * 100)}%`,
+                pct: (a.value / list.outstanding) * 100,
+                colour: a.colour,
+              })))}
             </div>
-            ${doneN ? `
-              <button class="btn btn--ghost btn--sm" type="button" data-act="putaway">
-                ${icon('fridge')}Put away ${doneN}
-              </button>` : ''}
+            ${fromPlan ? `
+              <p class="field__hint" style="text-align:center;margin-top:20px;padding:0">
+                ${fromPlan} of these ${fromPlan === 1 ? 'comes' : 'come'} from your meal plan.
+              </p>` : ''}
           </div>
+        </section>` : ''}
+
+      ${doneN ? `
+        <section class="section">
+          <button class="btn btn--block" type="button" data-act="putaway">
+            ${icon('fridge')}Put away ${doneN} ${doneN === 1 ? 'item' : 'items'}
+          </button>
         </section>` : ''}
 
       <section class="section">
         ${groups.length ? `
-          <div class="rows">
-            ${groups.map(renderGroup).join('')}
-          </div>` : `
+          <div class="rows">${groups.map(renderGroup).join('')}</div>` : `
           <div class="card">
             ${emptyState({
               iconName: 'cart',
@@ -89,7 +122,7 @@ export default {
                 ${icon('trash')}Clear ${plural(clearable, 'ticked item')}
               </button>` : ''}
           </div>
-          <p class="field__hint" style="text-align:center;margin-top:16px">
+          <p class="field__hint" style="text-align:center;margin-top:18px">
             Lines from the plan disappear once the meal is logged as eaten.
           </p>
         </section>` : ''}`;

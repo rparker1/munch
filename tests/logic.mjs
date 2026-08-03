@@ -1,13 +1,13 @@
 /* Functional checks against the real store module, driven in the browser. */
 import { chromium } from 'playwright';
 
-const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 393, height: 852 } });
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-await page.goto(process.env.BASE || 'http://127.0.0.1:8765/', { waitUntil: 'networkidle' });
+await page.goto('http://127.0.0.1:8765/', { waitUntil: 'networkidle' });
 await page.waitForTimeout(300);
 
 const results = await page.evaluate(() => {

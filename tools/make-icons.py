@@ -18,10 +18,12 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parent.parent / "icons"
 
 # --- palette (matches css/app.css) -----------------------------------------
-GREEN_LIGHT = (0x43, 0x9F, 0x74)
-GREEN_DARK = (0x1B, 0x54, 0x42)
-TANGERINE = (0xE4, 0x77, 0x2F)
-CREAM = (0xFF, 0xFD, 0xF8)
+# The plate is the same mint gradient as the hero card; the mark is the deep
+# ink the app prints on top of any pastel fill.
+MINT_LIGHT = (0xB4, 0xEC, 0xCF)
+MINT_DARK = (0x5C, 0xC4, 0x95)
+GLOW = (0xF9, 0xD0, 0x8A)      # amber, warming the top-right corner
+MARK = (0x0B, 0x1F, 0x16)
 
 
 # --- signed distance helpers ----------------------------------------------
@@ -94,15 +96,15 @@ def background(x, y):
     """Diagonal green ramp with a warm glow in the top-right corner."""
     t = max(0.0, min(1.0, (x * 0.55 + y * 0.75)))
     t = t * t * (3 - 2 * t)  # smoothstep, so the ramp is not linear-flat
-    r = GREEN_LIGHT[0] + (GREEN_DARK[0] - GREEN_LIGHT[0]) * t
-    g = GREEN_LIGHT[1] + (GREEN_DARK[1] - GREEN_LIGHT[1]) * t
-    b = GREEN_LIGHT[2] + (GREEN_DARK[2] - GREEN_LIGHT[2]) * t
+    r = MINT_LIGHT[0] + (MINT_DARK[0] - MINT_LIGHT[0]) * t
+    g = MINT_LIGHT[1] + (MINT_DARK[1] - MINT_LIGHT[1]) * t
+    b = MINT_LIGHT[2] + (MINT_DARK[2] - MINT_LIGHT[2]) * t
 
     glow = 1.0 - min(1.0, math.hypot(x - 1.06, y + 0.10) / 0.62)
-    glow = max(0.0, glow) ** 1.7 * 0.92
-    r += (TANGERINE[0] - r) * glow
-    g += (TANGERINE[1] - g) * glow
-    b += (TANGERINE[2] - b) * glow
+    glow = max(0.0, glow) ** 1.8 * 0.75
+    r += (GLOW[0] - r) * glow
+    g += (GLOW[1] - g) * glow
+    b += (GLOW[2] - b) * glow
     return r, g, b
 
 
@@ -151,9 +153,9 @@ def render(size, *, rounded=True, mark_scale=1.0, corner=0.222):
             r, g, b = background(x + step / 2, y + step / 2)
             m = coverage(mark_fn, x, y, step)
             if m > 0:
-                r += (CREAM[0] - r) * m
-                g += (CREAM[1] - g) * m
-                b += (CREAM[2] - b) * m
+                r += (MARK[0] - r) * m
+                g += (MARK[1] - g) * m
+                b += (MARK[2] - b) * m
 
             a = int(round(plate * 255))
             row += bytes((int(round(r)), int(round(g)), int(round(b)), a))
@@ -204,24 +206,24 @@ def write_svg(path: Path) -> None:
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}" role="img" aria-label="Munch">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#{GREEN_LIGHT[0]:02X}{GREEN_LIGHT[1]:02X}{GREEN_LIGHT[2]:02X}"/>
-      <stop offset="1" stop-color="#{GREEN_DARK[0]:02X}{GREEN_DARK[1]:02X}{GREEN_DARK[2]:02X}"/>
+      <stop offset="0" stop-color="#{MINT_LIGHT[0]:02X}{MINT_LIGHT[1]:02X}{MINT_LIGHT[2]:02X}"/>
+      <stop offset="1" stop-color="#{MINT_DARK[0]:02X}{MINT_DARK[1]:02X}{MINT_DARK[2]:02X}"/>
     </linearGradient>
     <radialGradient id="w" cx="1.03" cy="-0.05" r="0.62">
-      <stop offset="0" stop-color="#{TANGERINE[0]:02X}{TANGERINE[1]:02X}{TANGERINE[2]:02X}" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#{TANGERINE[0]:02X}{TANGERINE[1]:02X}{TANGERINE[2]:02X}" stop-opacity="0"/>
+      <stop offset="0" stop-color="#{GLOW[0]:02X}{GLOW[1]:02X}{GLOW[2]:02X}" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#{GLOW[0]:02X}{GLOW[1]:02X}{GLOW[2]:02X}" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="{s}" height="{s}" rx="{c(0.222)}" fill="url(#g)"/>
   <rect width="{s}" height="{s}" rx="{c(0.222)}" fill="url(#w)"/>
-  <g fill="#{CREAM[0]:02X}{CREAM[1]:02X}{CREAM[2]:02X}">
+  <g fill="#{MARK[0]:02X}{MARK[1]:02X}{MARK[2]:02X}">
     <path d="{bowl}"/>
     <rect x="{c(cx - RIM_HALF - RIM_T)}" y="{c(RIM_Y - RIM_T)}"
           width="{c((RIM_HALF + RIM_T) * 2)}" height="{c(RIM_T * 2)}" rx="{c(RIM_T)}"/>
     <g transform="translate({c(LEAF_C[0])},{c(LEAF_C[1])}) rotate({LEAF_ANGLE})">
       <path d="{leaf}"/>
       <rect x="-0.68" y="{c(-0.072)}" width="1.36" height="{c(0.22)}" rx="0.68"
-            fill="#{GREEN_LIGHT[0]:02X}{GREEN_LIGHT[1]:02X}{GREEN_LIGHT[2]:02X}"/>
+            fill="#{MINT_LIGHT[0]:02X}{MINT_LIGHT[1]:02X}{MINT_LIGHT[2]:02X}"/>
     </g>
   </g>
 </svg>

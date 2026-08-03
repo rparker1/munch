@@ -1,24 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Munch">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#439F74"/>
-      <stop offset="1" stop-color="#1B5442"/>
+      <stop offset="0" stop-color="#B4ECCF"/>
+      <stop offset="1" stop-color="#5CC495"/>
     </linearGradient>
     <radialGradient id="w" cx="1.03" cy="-0.05" r="0.62">
-      <stop offset="0" stop-color="#E4772F" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#E4772F" stop-opacity="0"/>
+      <stop offset="0" stop-color="#F9D08A" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#F9D08A" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="64" height="64" rx="14.21" fill="url(#g)"/>
   <rect width="64" height="64" rx="14.21" fill="url(#w)"/>
-  <g fill="#FFFDF8">
+  <g fill="#0B1F16">
     <path d="M 16.45,34.88 A 15.55,15.55 0 0 0 47.55,34.88 L 43.26,34.88 A 11.26,11.26 0 0 1 20.74,34.88 Z"/>
     <rect x="12.67" y="31.81"
           width="38.66" height="3.33" rx="1.66"/>
     <g transform="translate(32.0,16.51) rotate(-36.0)">
       <path d="M 0,-10.11 Q 5.44,0 0,10.11 Q -5.44,0 0,-10.11 Z"/>
       <rect x="-0.68" y="-4.61" width="1.36" height="14.08" rx="0.68"
-            fill="#439F74"/>
+            fill="#B4ECCF"/>
     </g>
   </g>
 </svg>
