@@ -17,12 +17,12 @@ import { tmpdir } from 'node:os';
 const TYPES = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json',
-  '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2',
 };
 
 // Stage the app exactly as the Pages workflow does.
 const root = await mkdtemp(join(tmpdir(), 'munch-deploy-'));
-for (const f of ['index.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons']) {
+for (const f of ['index.html', 'manifest.webmanifest', 'sw.js', 'css', 'js', 'icons', 'fonts']) {
   await cp(f, join(root, f), { recursive: true });
 }
 

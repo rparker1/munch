@@ -55,6 +55,7 @@ const SHELL = [
   './js/editors/meal.js',
   './js/editors/item.js',
   './js/editors/shop.js',
+  './fonts/plus-jakarta-sans-latin-var.woff2',
   './icons/favicon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

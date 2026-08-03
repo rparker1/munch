@@ -140,6 +140,54 @@ export function consumeAuthRedirect() {
   }
 }
 
+/**
+ * Sign in from the text of the emailed link, pasted into the app.
+ *
+ * Needed because a magic link cannot be relied on to return *into* an installed
+ * app: tapping it in Mail opens Safari, and a Home Screen web app does not
+ * necessarily share Safari's storage — so the browser ends up signed in while the
+ * app it was meant for still shows signed out. Pasting the link keeps the exchange
+ * inside whichever context the user is actually looking at.
+ *
+ * Accepts either shape Supabase produces: a `verify` URL carrying a token, or a
+ * URL that already came back with tokens in its fragment.
+ */
+export async function signInWithPastedLink(text) {
+  if (!cloudConfigured()) throw new Error('Supabase is not configured');
+  const raw = String(text || '').trim();
+  if (!raw) throw new Error('Paste the whole link from the email');
+
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('That does not look like a link — paste the whole thing');
+  }
+
+  // Already-exchanged tokens in the fragment.
+  const frag = new URLSearchParams(url.hash.replace(/^#/, ''));
+  if (frag.get('access_token')) {
+    return adopt({
+      access_token: frag.get('access_token'),
+      refresh_token: frag.get('refresh_token'),
+      expires_in: frag.get('expires_in'),
+      expires_at: frag.get('expires_at'),
+    });
+  }
+
+  const token = url.searchParams.get('token') || url.searchParams.get('token_hash');
+  if (!token) throw new Error('No sign-in token in that link — copy it again from the email');
+  const type = url.searchParams.get('type') || 'magiclink';
+
+  const res = await fetch(`${SUPABASE.url}/auth/v1/verify`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ token_hash: token, type }),
+  });
+  if (!res.ok) throw await readError(res, 'That link could not be used — it may have expired');
+  return adopt(await res.json());
+}
+
 async function refresh() {
   if (!session?.refreshToken) throw new Error('Session expired — sign in again');
   const res = await fetch(`${SUPABASE.url}/auth/v1/token?grant_type=refresh_token`, {

@@ -10,6 +10,7 @@ import { icon } from '../icons.js';
 import { pill } from '../ui.js';
 import { openMealEditor } from '../editors/meal.js';
 import { openItemPeek, openItemEditor } from '../editors/item.js';
+import * as sync from '../sync.js';
 
 function greeting() {
   const h = new Date().getHours();
@@ -25,6 +26,41 @@ function currentMealId() {
   if (h < 10.5) return 'breakfast';
   if (h < 15)   return 'lunch';
   return 'dinner';
+}
+
+/**
+ * Whether you are signed in, answered without opening Settings.
+ *
+ * Sign-in happens by following an emailed link, so it is entirely possible to
+ * think it worked when it did not. Saying so on the first screen is the fix.
+ */
+function syncStrip() {
+  const s = sync.snapshot();
+  if (!s.configured) return '';
+
+  if (!s.user) {
+    return `
+      <button class="syncstrip" type="button" data-act="settings">
+        <span class="syncstrip__dot"></span>
+        <span class="syncstrip__main">Not signed in — this device only</span>
+        ${icon('chevron')}
+      </button>`;
+  }
+
+  const wording = {
+    idle:    ['ok',   s.lastSynced ? `Synced ${s.lastSynced}` : 'Up to date'],
+    syncing: ['busy', 'Syncing…'],
+    offline: ['warn', s.pending ? `Offline · ${s.pending} waiting` : 'Offline'],
+    error:   ['bad',  'Sync problem — tap for details'],
+    off:     ['',     'Sync off'],
+  }[s.status] || ['ok', 'Up to date'];
+
+  return `
+    <button class="syncstrip" type="button" data-act="settings">
+      <span class="syncstrip__dot syncstrip__dot--${wording[0]}"></span>
+      <span class="syncstrip__main"><b>${esc(s.user.email || 'Signed in')}</b> · ${esc(wording[1])}</span>
+      ${icon('chevron')}
+    </button>`;
 }
 
 /** The pastel card: whatever is most worth saying, said big. */
@@ -100,6 +136,7 @@ export default {
 
     root.innerHTML = `
       <section class="section">
+        ${syncStrip()}
         ${hero(plan, urgent.length, list.outstanding)}
       </section>
 
@@ -148,7 +185,7 @@ export default {
           </button>
         </div>
         <p class="field__hint" style="text-align:center;margin-top:20px;opacity:.7">
-          Everything stays on this device.
+          ${sync.snapshot().user ? 'Synced to your account.' : 'Everything stays on this device.'}
         </p>
       </section>`;
 
