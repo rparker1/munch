@@ -1,0 +1,13 @@
+# Staged output of the Pages workflow
+_site/
+
+# Screenshots written by tests/smoke.mjs
+shots/
+
+# The app itself has no dependencies. These only appear if you follow the README
+# and install Playwright in order to run the tests.
+node_modules/
+package.json
+package-lock.json
+
+.DS_Store

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Munch — meals, inventory &amp; shopping</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="description" content="Plan meals, track what you have in at home and at work, and build a shopping list that follows the plan.">
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FBF7F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12100E" media="(prefers-color-scheme: dark)">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Munch">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="app" class="app">
+  <header class="topbar" id="topbar">
+    <div class="topbar__inner">
+      <div class="topbar__lead">
+        <h1 class="topbar__title" id="viewTitle">Today</h1>
+        <p class="topbar__sub" id="viewSub"></p>
+      </div>
+      <div class="topbar__actions" id="viewActions"></div>
+    </div>
+  </header>
+
+  <main class="viewport" id="viewport" tabindex="-1"></main>
+
+  <nav class="tabbar" id="tabbar" aria-label="Sections"></nav>
+</div>
+
+<div class="sheet-host" id="sheetHost" hidden>
+  <div class="sheet-scrim" data-close></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <header class="sheet__head">
+      <div class="sheet__grab"></div>
+      <h2 class="sheet__title" id="sheetTitle"></h2>
+      <button class="iconbtn sheet__close" type="button" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="sheet__body" id="sheetBody"></div>
+  </section>
+</div>
+
+<div class="toaster" id="toaster" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
