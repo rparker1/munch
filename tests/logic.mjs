@@ -1,7 +1,9 @@
 /* Functional checks against the real store module, driven in the browser. */
 import { chromium } from 'playwright';
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(
+  process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {},
+);
 const page = await browser.newPage({ viewport: { width: 393, height: 852 } });
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));

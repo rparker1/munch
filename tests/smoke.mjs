@@ -1,10 +1,12 @@
 import { chromium } from 'playwright';
 
 const BASE = 'http://127.0.0.1:8765/';
-const OUT = '/tmp/claude-0/-home-user-munch/c72f1697-562c-55b3-a975-cc1c0157eb4d/scratchpad/shots';
+const OUT = process.env.SHOT_DIR || './shots';
 const errors = [];
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(
+  process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {},
+);
 const ctx = await browser.newContext({
   viewport: { width: 393, height: 852 },   // iPhone 15 Pro
   deviceScaleFactor: 3,
