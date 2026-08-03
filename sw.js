@@ -1,11 +1,39 @@
 /* ==========================================================================
    Service worker.
-   Navigations: network first, cached shell as the fallback, so a new deploy
-   is picked up as soon as there is a connection but the app still opens
-   offline. Assets: stale-while-revalidate.
+
+   Network first for everything, with the cache as a pure offline fallback, so a
+   deploy lands the moment there is a connection and the app still opens with no
+   connection at all. Every network request carries a per-deploy build tag,
+   because on GitHub Pages that is the only way past the HTTP cache — see
+   `tagged()` below.
    ========================================================================== */
 
-const VERSION = 'munch-v2';
+/* Stamped with the commit SHA by .github/workflows/pages.yml at deploy time.
+   Leave it as 'dev' here; nothing local depends on it being unique. */
+const BUILD = 'dev';
+
+const VERSION = `munch-${BUILD}`;
+
+/**
+ * The same URL carrying the build tag.
+ *
+ * GitHub Pages serves assets with `Cache-Control: max-age=600` and those headers
+ * cannot be configured. A worker cannot get around them either: `fetch(url,
+ * { cache: 'reload' })` is silently ignored inside a service worker in Chromium,
+ * so for ten minutes after a deploy "go to the network" hands back the previous
+ * file and an installed app keeps booting the old version.
+ *
+ * Asking for a URL the HTTP cache has never seen is the way through. The tag
+ * changes every deploy, so the first request for each asset is guaranteed to miss
+ * the cache and hit the origin; Pages ignores the unknown query and serves the
+ * file. The response is then stored under the *original* request, so the page and
+ * the offline fallback never see the tag.
+ */
+function tagged(url) {
+  const u = new URL(url, self.location.href);
+  u.searchParams.set('b', BUILD);
+  return u.toString();
+}
 const SHELL = [
   './',
   './index.html',
@@ -33,8 +61,13 @@ const SHELL = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
-    // Individually, so one 404 cannot fail the whole install.
-    await Promise.all(SHELL.map(url => cache.add(url).catch(() => {})));
+    // Individually, so one missing file cannot fail the whole install.
+    await Promise.all(SHELL.map(async url => {
+      try {
+        const res = await fetch(tagged(url), { credentials: 'same-origin' });
+        if (res.ok) await cache.put(url, res);
+      } catch { /* offline at install time; the fetch handler will fill it in */ }
+    }));
     await self.skipWaiting();
   })());
 });
@@ -57,7 +90,12 @@ self.addEventListener('fetch', event => {
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const fresh = await fetch(request);
+        // A navigate-mode Request cannot be re-created, so rebuild it from the
+        // URL to be able to set the cache mode. See the note below on why.
+        const fresh = await fetch(tagged(request.url), {
+          credentials: 'same-origin',
+          redirect: 'follow',
+        });
         const cache = await caches.open(VERSION);
         cache.put('./index.html', fresh.clone());
         return fresh;
@@ -71,20 +109,23 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Network first, cache as the offline fallback.
+  //
+  // Not cache-first. The usual advice is to serve assets from the cache and
+  // revalidate behind it, but then a fresh index.html loads alongside the
+  // previous stylesheet and modules, and the app renders the old version until
+  // some later visit. These files are tens of kB behind HTTP/2, so going to the
+  // network costs little, and the cache still covers being offline completely.
   event.respondWith((async () => {
     const cache = await caches.open(VERSION);
-    const hit = await cache.match(request);
-
-    const network = fetch(request)
-      .then(res => {
-        if (res && res.ok) cache.put(request, res.clone());
-        return res;
-      })
-      .catch(() => null);
-
-    if (hit) return hit;
-    const res = await network;
-    return res || new Response('Offline', { status: 503, statusText: 'Offline' });
+    try {
+      const fresh = await fetch(tagged(request.url), { credentials: 'same-origin' });
+      if (fresh && fresh.ok) cache.put(request, fresh.clone());
+      return fresh;
+    } catch {
+      const hit = await cache.match(request);
+      return hit || new Response('Offline', { status: 503, statusText: 'Offline' });
+    }
   })());
 });
 

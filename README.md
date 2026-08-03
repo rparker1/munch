@@ -50,6 +50,22 @@ The workflow stages only the app itself (`index.html`, `css/`, `js/`, `icons/`,
 `sw.js`, `manifest.webmanifest`). The tests, the icon generator and this README
 stay in the repo rather than being served from the live site.
 
+### Why the worker tags every request with a build
+
+GitHub Pages serves assets with `Cache-Control: max-age=600` and does not let you
+configure that. A service worker cannot get around it either: inside a worker,
+`fetch(url, { cache: 'reload' })` is silently ignored in Chromium, so for ten
+minutes after a deploy "go to the network" hands back the previous file and an
+installed app keeps booting the old version — which looks exactly like a failed
+deploy.
+
+The way through is to request a URL the HTTP cache has never seen. `sw.js` appends
+`?b=<build>` to every request and stores the response under the original URL, so
+the page never sees the tag. The staging step stamps `BUILD` with the commit SHA,
+which is what makes each deploy's first request a guaranteed cache miss. **If you
+ever change how the site is staged, keep that stamp** — `tests/deploy.mjs` fails
+without it.
+
 ## Installing on an iPhone
 
 1. Open the site in **Safari** — the Add to Home Screen flow only exists there.
@@ -120,6 +136,13 @@ them.
 model — merging, drawing down stock, undo, the buy → put away → re-point flow,
 the horizon, home/work separation, persistence across a reload.
 
+`deploy.mjs` is the one that matters when the live site looks wrong. It serves a
+staged copy with GitHub Pages' own `Cache-Control: max-age=600`, lets the service
+worker install and take control, then edits the copy and re-stamps the build the
+way the workflow does — and requires the change to reach the running app. It also
+checks the app still boots with the network off. It starts its own server, so it
+needs no `python3 -m http.server`.
+
 `smoke.mjs` walks the UI at iPhone dimensions and screenshots every view. It
 fails fast if the app does not boot, then checks each view for layout width and a
 tappable tab bar. Note what it does *not* do: compare `scrollWidth` to
@@ -133,6 +156,8 @@ catches it.
 node tests/syntax.mjs
 
 npm i -D playwright
+node tests/deploy.mjs
+
 python3 -m http.server 8765 &
 node tests/logic.mjs
 SHOT_DIR=./shots node tests/smoke.mjs
