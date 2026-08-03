@@ -4,6 +4,9 @@
    ========================================================================== */
 
 import * as store from './store.js';
+import * as cloud from './cloud.js';
+import * as sync from './sync.js';
+import { cloudConfigured } from './config.js';
 import { PLACES, placeOf } from './store.js';
 import { $, esc, plural, haptic } from './util.js';
 import { icon } from './icons.js';
@@ -99,6 +102,10 @@ function openSettings() {
     title: 'Settings',
     body: `
       <div class="form">
+        ${accountBlock()}
+
+        <div class="divider"></div>
+
         <div class="field">
           <span class="field__label">Where you keep things</span>
           <div class="rows">
@@ -157,6 +164,7 @@ function openSettings() {
       </div>`,
     mount(root) {
       bindPickers(root);
+      bindAccount(root, render);
 
       root.querySelector('[data-segmented=horizonDays]').addEventListener('pick', e => {
         store.setSetting('horizonDays', Number(e.detail));
@@ -222,6 +230,115 @@ function openSettings() {
   render();
 }
 
+/* --- account & sync ----------------------------------------------------- */
+
+const SYNC_WORDS = {
+  off:     ['', ''],
+  idle:    ['ok',   'Up to date'],
+  syncing: ['primary', 'Syncing…'],
+  offline: ['warn', 'Offline — will sync later'],
+  error:   ['bad',  'Sync problem'],
+};
+
+function accountBlock() {
+  if (!cloudConfigured()) {
+    return `
+      <div class="field">
+        <span class="field__label">Sync</span>
+        <div class="hintbar hintbar--info">
+          ${icon('info')}
+          <span>Not set up yet. Add your Supabase project URL and anon key to
+          <b>js/config.js</b>, and run <b>supabase/schema.sql</b> in the SQL editor.
+          Until then everything stays on this device.</span>
+        </div>
+      </div>`;
+  }
+
+  const s = sync.snapshot();
+  const user = s.user;
+
+  if (!user) {
+    return `
+      <div class="field">
+        <span class="field__label">Sync across devices</span>
+        <span class="field__hint" style="padding:0">
+          Enter your email and we will send a sign-in link — no password. Your
+          account starts empty; what is on this device stays on this device.
+        </span>
+        ${textInput({ name: 'email', value: '', placeholder: 'you@example.com', type: 'email' })}
+        <button class="btn btn--sm btn--block" type="button" data-signin style="margin-top:4px">
+          ${icon('share')}Email me a sign-in link
+        </button>
+      </div>`;
+  }
+
+  const [tone, words] = SYNC_WORDS[s.status] || SYNC_WORDS.idle;
+  return `
+    <div class="field">
+      <span class="field__label">Signed in</span>
+      <div class="rows">
+        <div class="row" style="cursor:default">
+          <span class="row__lead">${icon('spark')}</span>
+          <span class="row__main">
+            <span class="row__name">${esc(user.email || 'Your account')}</span>
+            <span class="row__sub">
+              ${esc(words)}${s.lastSynced && s.status === 'idle' ? ` · ${esc(s.lastSynced)}` : ''}
+              ${s.pending ? ` · ${s.pending} waiting` : ''}
+            </span>
+          </span>
+          <span class="row__tail">${tone ? `<span class="pill pill--${tone}">${esc(words)}</span>` : ''}</span>
+        </div>
+      </div>
+      ${s.status === 'error' && s.detail ? `
+        <div class="hintbar">${icon('alert')}<span>${esc(s.detail)}</span></div>` : ''}
+      <div class="grid2" style="margin-top:4px">
+        <button class="btn btn--ghost btn--sm" type="button" data-syncnow>${icon('refresh')}Sync now</button>
+        <button class="btn btn--ghost btn--sm" type="button" data-signout>${icon('undo')}Sign out</button>
+      </div>
+    </div>`;
+}
+
+function bindAccount(root, reopen) {
+  root.querySelector('[data-signin]')?.addEventListener('click', async () => {
+    const email = root.querySelector('[name=email]').value.trim();
+    if (!email || !email.includes('@')) { root.querySelector('[name=email]').focus(); return; }
+    const btn = root.querySelector('[data-signin]');
+    btn.disabled = true;
+    try {
+      await cloud.sendMagicLink(email);
+      toast('Check your email for the link', { iconName: 'check', ms: 5000 });
+      closeSheet();
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message || 'Could not send the link', { iconName: 'alert', ms: 5000 });
+    }
+  });
+
+  root.querySelector('[data-syncnow]')?.addEventListener('click', async () => {
+    const ok = await sync.syncNow();
+    ctx.refresh();
+    reopen();
+    if (ok) toast('Synced', { iconName: 'check' });
+    else toast(sync.snapshot().detail || 'Could not sync', { iconName: 'alert', ms: 4500 });
+  });
+
+  root.querySelector('[data-signout]')?.addEventListener('click', () => {
+    confirmSheet({
+      title: 'Sign out?',
+      message: 'This device goes back to the copy it had before you signed in. '
+        + 'Anything synced stays in your account and comes back when you sign in again.',
+      confirmLabel: 'Sign out',
+      run: async () => {
+        await cloud.signOut();
+        store.useAccount(null);
+        navigate('today');
+        ctx.refresh();
+        toast('Signed out', { iconName: 'check' });
+      },
+    });
+  });
+}
+
 /* --- chrome ------------------------------------------------------------- */
 
 /* Hairline under the header only once the content has scrolled beneath it. */
@@ -243,10 +360,10 @@ function watchLifecycle() {
   };
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) store.flush();
+    if (document.hidden) { store.flush(); sync.flush(); }
     else checkDay();
   });
-  window.addEventListener('pagehide', () => store.flush());
+  window.addEventListener('pagehide', () => { store.flush(); sync.flush(); });
   setInterval(checkDay, 60_000);
 }
 
@@ -278,7 +395,11 @@ function registerServiceWorker() {
 
 /* --- boot --------------------------------------------------------------- */
 
-store.init();
+// A magic-link return arrives with tokens in the fragment, which is also where
+// the router keeps the current view — so claim it and clean it up first.
+const authReturn = cloud.consumeAuthRedirect();
+
+store.init(cloud.currentUser()?.id || null);
 store.subscribe(() => {
   // Persisted; views re-render explicitly via ctx.refresh so we do not fight
   // half-finished sheet interactions.
@@ -292,10 +413,19 @@ watchScroll();
 watchLifecycle();
 registerServiceWorker();
 
+sync.start();
+sync.subscribe(() => renderTabs());
+
+if (authReturn?.status === 'signed-in') {
+  toast(`Signed in as ${authReturn.user.email || 'your account'}`, { iconName: 'check', ms: 4000 });
+} else if (authReturn?.status === 'error') {
+  toast(authReturn.message, { iconName: 'alert', ms: 6000 });
+}
+
 window.addEventListener('hashchange', () => {
   const id = location.hash.replace('#', '');
   if (VIEWS.some(v => v.id === id) && id !== current) { current = id; render(); }
 });
 
 // A tiny hook for debugging from Safari's console.
-window.munch = { store, refresh: () => render(), go: navigate };
+window.munch = { store, cloud, sync, refresh: () => render(), go: navigate };

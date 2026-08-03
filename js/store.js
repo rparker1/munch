@@ -6,8 +6,13 @@
 
 import { uid, iso, today, addDays, normName, titleCase, daysFromToday } from './util.js';
 
-const KEY    = 'munch.state';
-const SCHEMA = 1;
+const BASE_KEY = 'munch.state';
+const SCHEMA   = 1;
+
+/* Signed-out data lives under the base key; each account gets its own, so
+   signing in never overwrites what was already on the device and signing out
+   hands it straight back. */
+let KEY = BASE_KEY;
 
 /* --- reference data ----------------------------------------------------- */
 
@@ -54,6 +59,14 @@ const emptyState = () => ({
   library: [],
   locations: [],
   settings: { seeded: false, horizonDays: 14 },
+
+  // Sync bookkeeping. stamps/tombstones carry the last-write-wins clock per
+  // record, dirty is what still needs pushing, syncedAt is how far the last
+  // pull got (the server's clock, not this device's).
+  stamps: {},
+  tombstones: {},
+  dirty: {},
+  syncedAt: null,
 });
 
 let state = emptyState();
@@ -113,8 +126,203 @@ export function subscribe(fn) {
 }
 
 function commit({ silent = false } = {}) {
+  reindex({ stamp: true });
   persist();
   if (!silent) emit();
+}
+
+/* ==========================================================================
+   Sync bookkeeping
+   ==========================================================================
+
+   Every mutation already funnels through commit(), so rather than remembering to
+   stamp a clock inside each of the twenty-odd writers — and eventually forgetting
+   one — commit() diffs the record view of state against the last one it saw and
+   stamps whatever actually moved. Adding a new mutation needs no sync code at all.
+   ========================================================================== */
+
+const recKey = (kind, id) => `${kind}:${id}`;
+const slotId = (date, mealId) => `${date}|${mealId}`;
+
+/** Timestamps arrive from two clocks in two formats, so never compare as text. */
+const at = iso => Date.parse(iso) || 0;
+
+/** Flatten state into the records that get synced. */
+function* walkRecords() {
+  for (const it of state.inventory) yield { kind: 'inventory', id: it.id, payload: it };
+  for (const it of state.shopping) yield { kind: 'shopping', id: it.id, payload: it };
+  for (const l of state.library) yield { kind: 'library', id: l.id, payload: l };
+  for (const l of state.locations) yield { kind: 'location', id: l.id, payload: l };
+  for (const [date, day] of Object.entries(state.plan)) {
+    for (const meal of MEALS) {
+      if (day[meal.id]) yield { kind: 'slot', id: slotId(date, meal.id), payload: day[meal.id] };
+    }
+  }
+  for (const k of Object.keys(state.planTicks)) yield { kind: 'tick', id: k, payload: { on: true } };
+  yield { kind: 'setting', id: 'app', payload: state.settings };
+}
+
+/** Put one record back, wherever it belongs. */
+function writeRecord(kind, id, payload) {
+  if (!payload) return;
+  const upsert = (list, item) => {
+    const i = list.findIndex(x => x.id === item.id);
+    if (i === -1) list.push(item); else list[i] = item;
+  };
+  if (kind === 'inventory') upsert(state.inventory, payload);
+  else if (kind === 'shopping') upsert(state.shopping, payload);
+  else if (kind === 'library') upsert(state.library, payload);
+  else if (kind === 'location') upsert(state.locations, payload);
+  else if (kind === 'tick') state.planTicks[id] = true;
+  else if (kind === 'setting') state.settings = { ...emptyState().settings, ...payload };
+  else if (kind === 'slot') {
+    const [date, mealId] = id.split('|');
+    if (!date || !mealId) return;
+    if (!state.plan[date]) state.plan[date] = {};
+    state.plan[date][mealId] = payload;
+  }
+}
+
+function dropRecord(kind, id) {
+  if (kind === 'inventory') state.inventory = state.inventory.filter(x => x.id !== id);
+  else if (kind === 'shopping') state.shopping = state.shopping.filter(x => x.id !== id);
+  else if (kind === 'library') state.library = state.library.filter(x => x.id !== id);
+  else if (kind === 'location') state.locations = state.locations.filter(x => x.id !== id);
+  else if (kind === 'tick') delete state.planTicks[id];
+  else if (kind === 'slot') {
+    const [date, mealId] = id.split('|');
+    const day = state.plan[date];
+    if (!day) return;
+    delete day[mealId];
+    if (!Object.keys(day).length) delete state.plan[date];
+  }
+  // 'setting' is a singleton and is never deleted.
+}
+
+/* What the last diff saw, as key -> serialised payload. */
+let seen = new Map();
+
+/**
+ * Re-read the record view. With `stamp`, anything that changed since the last
+ * pass gets the current clock and is queued for push; without it the pass only
+ * establishes a baseline (after a load, or after applying remote records that
+ * already carry their own clock).
+ */
+function reindex({ stamp }) {
+  const now = new Date().toISOString();
+  const current = new Map();
+  for (const rec of walkRecords()) {
+    current.set(recKey(rec.kind, rec.id), JSON.stringify(rec.payload));
+  }
+
+  if (stamp) {
+    for (const [k, json] of current) {
+      if (seen.get(k) === json) continue;
+      state.stamps[k] = now;
+      state.dirty[k] = true;
+      delete state.tombstones[k];
+    }
+    for (const k of seen.keys()) {
+      if (current.has(k)) continue;
+      state.tombstones[k] = now;
+      state.dirty[k] = true;
+      delete state.stamps[k];
+    }
+  }
+
+  seen = current;
+}
+
+/** Records still waiting to go up. */
+export function pendingRecords() {
+  const out = [];
+  const payloads = new Map();
+  for (const rec of walkRecords()) payloads.set(recKey(rec.kind, rec.id), rec.payload);
+
+  for (const k of Object.keys(state.dirty)) {
+    const cut = k.indexOf(':');
+    const kind = k.slice(0, cut);
+    const id = k.slice(cut + 1);
+    const tomb = state.tombstones[k];
+    if (tomb) {
+      out.push({ key: k, kind, id, payload: null, updatedAt: tomb, deleted: true });
+      continue;
+    }
+    const payload = payloads.get(k);
+    if (!payload) { delete state.dirty[k]; continue; }
+    out.push({
+      key: k, kind, id, payload, deleted: false,
+      updatedAt: state.stamps[k] || new Date().toISOString(),
+    });
+  }
+  return out;
+}
+
+export const pendingCount = () => Object.keys(state.dirty).length;
+
+export function markPushed(keys) {
+  for (const k of keys) delete state.dirty[k];
+  persist();
+}
+
+/**
+ * Merge records pulled from the server. Last write wins on the record's own
+ * clock; a local edit that has not been pushed yet only loses if the incoming
+ * copy is genuinely newer.
+ */
+export function applyRemote(rows) {
+  let changed = 0;
+  for (const row of rows) {
+    const k = recKey(row.kind, row.id);
+    const mine = state.tombstones[k] || state.stamps[k] || null;
+    const theirs = row.updated_at;
+    if (mine && at(mine) >= at(theirs)) continue;
+
+    if (row.deleted_at) {
+      dropRecord(row.kind, row.id);
+      state.tombstones[k] = theirs;
+      delete state.stamps[k];
+    } else {
+      writeRecord(row.kind, row.id, row.payload);
+      state.stamps[k] = theirs;
+      delete state.tombstones[k];
+    }
+    delete state.dirty[k];
+    changed += 1;
+  }
+
+  if (changed) {
+    prune();
+    reindex({ stamp: false });   // the clocks came with the rows
+    persist();
+    emit();
+  }
+  return changed;
+}
+
+export const syncedAt = () => state.syncedAt;
+export function setSyncedAt(iso) { state.syncedAt = iso; persist(); }
+
+/**
+ * Point the store at an account's own workspace, or back at the signed-out one.
+ * Data is never merged between them: signing in opens an empty workspace for
+ * that account and signing out hands back exactly what was on the device.
+ */
+export function useAccount(userId) {
+  flush();
+  KEY = userId ? `${BASE_KEY}.${userId}` : BASE_KEY;
+  const restored = load();
+  if (!restored) {
+    state = emptyState();
+    defaultLocations();
+    if (!userId) { seedDemo(); state.settings.seeded = true; }
+  }
+  if (!state.locations.length) defaultLocations();
+  prune();
+  reindex({ stamp: false });
+  persist();
+  emit();
+  return state;
 }
 
 /* --- undo (one deep, for destructive actions) --------------------------- */
@@ -739,14 +947,21 @@ function seedDemo() {
   ];
 }
 
-export function init() {
+/**
+ * Boot the store. `accountId` opens that account's workspace; omit it for the
+ * signed-out one. The sample data only ever seeds the signed-out workspace — an
+ * account starts empty.
+ */
+export function init(accountId = null) {
+  KEY = accountId ? `${BASE_KEY}.${accountId}` : BASE_KEY;
   const restored = load();
   if (!restored || !state.locations.length) defaultLocations();
-  if (!restored) {
+  if (!restored && !accountId) {
     seedDemo();
     state.settings.seeded = true;
   }
   prune();
+  reindex({ stamp: false });   // baseline, so a plain load pushes nothing
   persist();
   return state;
 }

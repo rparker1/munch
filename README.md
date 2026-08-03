@@ -17,8 +17,19 @@ Buy something and put it away and the plan updates: those ingredients switch fro
 "to buy" to "from stock". Log a meal as eaten and the amounts it used come off
 the inventory.
 
-No accounts, no server, no network calls. Everything lives in the browser's local
-storage on the device.
+## Storage
+
+The device's own copy is always the working copy, so the app opens and edits
+instantly with no connection — in a shop with no signal, or on the Tube.
+
+Signed out, that is all there is: everything stays in the browser on that device.
+Sign in with an emailed link and the same data also syncs to Supabase, so a phone
+and a laptop stay in step. Conflicts resolve last-write-wins per record: two
+devices editing different items both keep their edit; two editing the *same* item
+inside one sync window means one of the two is dropped.
+
+Signing in never merges the two together. Each account gets its own workspace and
+starts empty, and signing out hands back exactly what was on the device before.
 
 ## Look
 
@@ -100,8 +111,12 @@ js/
   util.js               dates, formatting, small DOM helpers
   icons.js              inline SVG icon set
   charts.js             donut, column chart, stat bars — hand-built SVG
+  config.js             Supabase URL and publishable key (blank = device only)
+  cloud.js              Supabase auth and REST, no SDK
+  sync.js               push/pull, scheduling, status
   views/                today, plan, inventory, shop
   editors/              the sheets: meal, inventory item, shopping line
+supabase/schema.sql     the one table, its trigger and its RLS policies
 icons/                  generated PNG and SVG app icons
 tools/make-icons.py     regenerates icons/ from the vector definition
 tests/                  Playwright checks (see below)
@@ -109,6 +124,48 @@ tests/                  Playwright checks (see below)
 
 `store.js` is the only thing that touches persisted state. Views render from it
 and call `ctx.refresh()`; they never hold their own copy of the data.
+
+Sync needs to know which records changed, and rather than stamping a clock inside
+each of the twenty-odd mutation functions — and eventually forgetting one —
+`commit()` diffs the record view of state against the last one it saw and stamps
+whatever moved. Adding a mutation needs no sync code at all.
+
+`cloud.js` deliberately does not use `@supabase/supabase-js`. The app has no
+dependencies and no build step, and the SDK would have to come from a CDN, which
+an offline-capable PWA cannot rely on. Auth is GoTrue and the data API is
+PostgREST; both are ordinary REST and only a handful of calls are needed.
+
+## Supabase
+
+`supabase/schema.sql` is already applied to the project in `js/config.js`. One
+table, `munch_records`, holding a keyed bag of documents the client pulls
+incrementally — which is all last-write-wins-per-record needs, and avoids a table
+and a mapping layer for each of stock, meals, list, aisles and settings.
+
+The publishable key in `config.js` is meant to be handed to browsers and is safe to
+commit. What keeps the data private is row-level security, verified on this project
+by impersonating two users inside a rolled-back transaction:
+
+| check | result |
+| --- | --- |
+| a user can upsert and read their own rows | yes |
+| a user can write a row belonging to someone else | refused |
+| another signed-in user can see those rows | no |
+| a caller holding only the publishable key can see anything | no |
+
+The `service_role` key has none of those protections and must never be committed.
+
+**One manual step remains.** Sign-in links will not return to the app until the
+site is on the allow-list: Supabase dashboard → Authentication → URL Configuration
+→ Redirect URLs, add
+
+```
+https://rparker1.github.io/munch/
+http://127.0.0.1:8765/
+```
+
+(the second only if you want sign-in to work locally). There is no API for this
+setting, so it cannot be scripted.
 
 ## Icons
 
@@ -131,6 +188,13 @@ Node parses as CommonJS, whose body is function-wrapped, so things that are
 illegal in a module (a stray top-level `return`, say) pass silently. It copies
 each file to `.mjs` first to force module parsing, which is how the browser reads
 them.
+
+`sync.mjs` covers the sync bookkeeping without needing a Supabase project at all:
+it drives the store and plays the part of the server by hand. It checks a change is
+queued exactly once, that last-write-wins picks the right side, that a deletion
+propagates as a tombstone instead of reappearing, that signing in and out never
+mixes two workspaces, and — the point of local-first — that a signed-in device with
+an unreachable server still boots, still takes edits, and queues them.
 
 `logic.mjs` drives the real store module in the browser and asserts on the data
 model — merging, drawing down stock, undo, the buy → put away → re-point flow,
@@ -160,6 +224,7 @@ node tests/deploy.mjs
 
 python3 -m http.server 8765 &
 node tests/logic.mjs
+node tests/sync.mjs
 SHOT_DIR=./shots node tests/smoke.mjs
 ```
 
