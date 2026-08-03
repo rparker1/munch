@@ -283,26 +283,41 @@ function accountBlock() {
   const user = s.user;
 
   if (!user) {
+    const pending = cloud.pendingEmail();
     return `
       <div class="field">
         <span class="field__label">Sync across devices</span>
         <span class="field__hint" style="padding:0">
-          Enter your email and we will send a sign-in link — no password. Your
-          account starts empty; what is on this device stays on this device.
+          Your account starts empty; what is on this device stays on this device.
         </span>
-        ${textInput({ name: 'email', value: '', placeholder: 'you@example.com', type: 'email' })}
+        ${textInput({ name: 'email', value: pending, placeholder: 'you@example.com', type: 'email' })}
         <button class="btn btn--sm btn--block" type="button" data-signin style="margin-top:4px">
-          ${icon('share')}Email me a sign-in link
+          ${icon('share')}${pending ? 'Send another email' : 'Email me a sign-in code'}
         </button>
+
+        ${pending ? `
+          <div class="divider" style="margin:14px 4px"></div>
+          <span class="field__label">Finish signing in</span>
+          <span class="field__hint" style="padding:0">
+            Tapping the link in the email signs in Safari, not this app — iOS keeps
+            them separate. Use the code from the email instead, or paste the link itself.
+          </span>
+          ${textInput({ name: 'code', value: '', placeholder: '6-digit code', attrs: 'inputmode="numeric" autocomplete="one-time-code"' })}
+          <button class="btn btn--sm btn--block" type="button" data-code>${icon('check')}Sign in with code</button>
+          ${textInput({ name: 'pasted', value: '', placeholder: 'or paste the link from the email' })}
+          <button class="btn btn--ghost btn--sm btn--block" type="button" data-paste>
+            ${icon('check')}Sign in with pasted link
+          </button>` : ''}
+
         <div class="divider" style="margin:14px 4px"></div>
+        <span class="field__label">Already signed in elsewhere</span>
         <span class="field__hint" style="padding:0">
-          Tapping the link opens Safari, which on iOS can be a different place from
-          your home-screen app — so if it signed in the browser but not here, paste
-          the link itself in below instead.
+          Quickest route, and it needs no email at all. On the device that is already
+          signed in, open Settings and copy its transfer code, then paste it here.
         </span>
-        ${textInput({ name: 'pasted', value: '', placeholder: 'Paste the link from the email' })}
-        <button class="btn btn--ghost btn--sm btn--block" type="button" data-paste>
-          ${icon('check')}Sign in with a pasted link
+        ${textInput({ name: 'transfer', value: '', placeholder: 'munch1:…' })}
+        <button class="btn btn--ghost btn--sm btn--block" type="button" data-transfer-in>
+          ${icon('copy')}Use a transfer code
         </button>
       </div>`;
   }
@@ -330,6 +345,13 @@ function accountBlock() {
         <button class="btn btn--ghost btn--sm" type="button" data-syncnow>${icon('refresh')}Sync now</button>
         <button class="btn btn--ghost btn--sm" type="button" data-signout>${icon('undo')}Sign out</button>
       </div>
+      <button class="btn btn--ghost btn--sm btn--block" type="button" data-transfer-out>
+        ${icon('copy')}Copy transfer code for another device
+      </button>
+      <span class="field__hint" style="padding:0">
+        Paste it into Settings on your home-screen app or laptop to sign that in without
+        another email. Treat it like a password, and note it may sign this one out.
+      </span>
     </div>`;
 }
 
@@ -341,32 +363,81 @@ function bindAccount(root, reopen) {
     btn.disabled = true;
     try {
       await cloud.sendMagicLink(email);
-      toast('Check your email for the link', { iconName: 'check', ms: 5000 });
-      closeSheet();
+      cloud.setPendingEmail(email);
+      toast('Email sent — use the code in it', { iconName: 'check', ms: 5000 });
+      reopen();
     } catch (err) {
       btn.disabled = false;
-      toast(err.message || 'Could not send the link', { iconName: 'alert', ms: 5000 });
+      const limited = /rate|limit|too many|429/i.test(err.message || '');
+      toast(limited
+        ? 'Email limit reached — wait an hour, or use a transfer code'
+        : (err.message || 'Could not send the email'), { iconName: 'alert', ms: 6500 });
     }
   });
 
-  root.querySelector('[data-paste]')?.addEventListener('click', async () => {
-    const btn = root.querySelector('[data-paste]');
-    const text = root.querySelector('[name=pasted]').value;
-    btn.disabled = true;
+  /* One place for everything that ends with a session in hand. */
+  const finish = async (btnSel, run) => {
+    const btn = root.querySelector(btnSel);
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await run();
+        const user = cloud.currentUser();
+        cloud.clearPendingEmail();
+        store.useAccount(user.id);
+        sync.start();
+        closeSheet();
+        navigate('today');
+        ctx.refresh();
+        toast(`Signed in as ${user.email || 'your account'}`, { iconName: 'check', ms: 4000 });
+      } catch (err) {
+        btn.disabled = false;
+        toast(err.message || 'Could not sign in', { iconName: 'alert', ms: 6500 });
+      }
+    });
+  };
+
+  finish('[data-code]', () => cloud.signInWithCode(
+    root.querySelector('[name=email]')?.value.trim() || cloud.pendingEmail(),
+    root.querySelector('[name=code]').value,
+  ));
+
+  finish('[data-transfer-in]', () => cloud.signInWithTransfer(
+    root.querySelector('[name=transfer]').value,
+  ));
+
+  root.querySelector('[data-transfer-out]')?.addEventListener('click', async () => {
     try {
-      await cloud.signInWithPastedLink(text);
-      const user = cloud.currentUser();
-      store.useAccount(user.id);
-      sync.start();
-      closeSheet();
-      navigate('today');
-      ctx.refresh();
-      toast(`Signed in as ${user.email || 'your account'}`, { iconName: 'check', ms: 4000 });
-    } catch (err) {
-      btn.disabled = false;
-      toast(err.message || 'Could not sign in', { iconName: 'alert', ms: 6000 });
+      const code = cloud.exportTransfer();
+      await navigator.clipboard.writeText(code);
+      toast('Transfer code copied — paste it into the other app', { iconName: 'copy', ms: 5000 });
+    } catch {
+      // Clipboard access can be refused, so fall back to showing it to copy by hand.
+      try {
+        const code = cloud.exportTransfer();
+        openSheet({
+          title: 'Transfer code',
+          body: `
+            <div class="form">
+              <span class="field__hint" style="padding:0">
+                Select all of this and copy it, then paste it into Settings on the other
+                app. It is as sensitive as a password.
+              </span>
+              <textarea class="textarea" readonly rows="4"
+                style="font-family:ui-monospace,monospace;font-size:12px">${esc(code)}</textarea>
+              <button class="btn btn--block" type="button" data-close>Done</button>
+            </div>`,
+        });
+      } catch (err) {
+        toast(err.message || 'Could not make a code', { iconName: 'alert' });
+      }
     }
   });
+
+  finish('[data-paste]', () => cloud.signInWithPastedLink(
+    root.querySelector('[name=pasted]').value,
+  ));
 
   root.querySelector('[data-syncnow]')?.addEventListener('click', async () => {
     const ok = await sync.syncNow();
