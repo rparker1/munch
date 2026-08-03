@@ -55,7 +55,7 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
       <div class="grid-qty">
         ${field({ label: 'Amount', control: textInput({
           name: 'qty', value: start.qty == null ? '' : num(start.qty),
-          placeholder: '0', attrs: 'inputmode="decimal"',
+          placeholder: '0', selectOnFocus: true, attrs: 'inputmode="decimal"',
         }) })}
         ${field({ label: 'Unit', control: select({ name: 'unit', value: start.unit, options: unitOptions }) })}
       </div>
@@ -91,9 +91,14 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
       </div>
     </div>`;
 
+  // Assigned in mount, where `root` exists; the head-bar tick and the foot button
+  // both go through it so there is only ever one save path.
+  let save = () => {};
+
   openSheet({
     title: item ? item.name : 'Add to stock',
     body,
+    confirm: { label: item ? 'Save' : 'Add to stock', run: () => save() },
     mount(root) {
       bindPickers(root);
 
@@ -112,9 +117,9 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
         });
       });
 
-      root.querySelector('[data-save]').addEventListener('click', () => {
+      save = () => {
         const f = readForm(root);
-        if (!f.name) { root.querySelector('[name=name]').focus(); return; }
+        if (!f.name) { root.querySelector('[name=name]').focus({ preventScroll: true }); return; }
         const patch = {
           name: f.name,
           qty: f.qty,
@@ -129,7 +134,9 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
         closeSheet();
         after?.();
         toast(item ? 'Stock updated' : `${patch.name} added to ${store.locationLabel(patch.locId)}`, { iconName: 'check' });
-      });
+      };
+
+      root.querySelector('[data-save]').addEventListener('click', save);
 
       root.querySelector('[data-del]')?.addEventListener('click', () => {
         confirmSheet({

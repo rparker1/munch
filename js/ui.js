@@ -12,9 +12,20 @@ const host  = $('#sheetHost');
 const panel = $('.sheet', host);
 const titleEl = $('#sheetTitle');
 const bodyEl  = $('#sheetBody');
+const actionsEl = $('#sheetActions');
 
 let onDismiss = null;
+let onConfirm = null;
 let lastFocus = null;
+
+/** Head-bar tick, next to the close cross. Omit `confirm` and nothing renders. */
+function renderConfirm(confirm) {
+  onConfirm = confirm?.run || null;
+  actionsEl.innerHTML = confirm
+    ? `<button class="iconbtn iconbtn--primary sheet__act" type="button" data-confirm
+         aria-label="${esc(confirm.label || 'Save')}">${icon('check')}</button>`
+    : '';
+}
 
 /**
  * Open the sheet.
@@ -23,20 +34,28 @@ let lastFocus = null;
  * @param {string}   o.body      HTML for the scrolling body
  * @param {Function} [o.mount]   called with the body element after insertion
  * @param {Function} [o.dismiss] called when the sheet closes
+ * @param {object}   [o.confirm] { label, run } — renders a tick beside the cross
  */
-export function openSheet({ title, body, mount, dismiss }) {
+export function openSheet({ title, body, mount, dismiss, confirm = null }) {
   lastFocus = document.activeElement;
   onDismiss = dismiss || null;
   titleEl.textContent = title;
   bodyEl.innerHTML = body;
+  renderConfirm(confirm);
   host.hidden = false;
   host.classList.remove('is-closing');
   panel.classList.remove('is-closing');
   document.body.style.overflow = 'hidden';
   if (mount) mount(bodyEl);
+  bindSelectAll(bodyEl);
   // Focus the first real control, but never auto-open the keyboard on iOS.
+  // preventScroll is load-bearing: the panel is mid-`rise` here, so letting the
+  // browser scroll the input into view leaves the body scrolled to the bottom.
   const first = bodyEl.querySelector('[data-autofocus]');
-  if (first) first.focus();
+  if (first) first.focus({ preventScroll: true });
+  // The body element outlives each sheet, so its offset has to be reset by hand
+  // — and again after focus, for Safari versions that ignore preventScroll.
+  bodyEl.scrollTop = 0;
 }
 
 export function closeSheet() {
@@ -46,6 +65,8 @@ export function closeSheet() {
   const finish = () => {
     host.hidden = true;
     bodyEl.innerHTML = '';
+    actionsEl.innerHTML = '';
+    onConfirm = null;
     document.body.style.overflow = '';
     panel.classList.remove('is-closing');
     host.classList.remove('is-closing');
@@ -62,6 +83,7 @@ export const sheetBody = () => bodyEl;
 
 host.addEventListener('click', e => {
   if (e.target.closest('[data-close]')) closeSheet();
+  else if (e.target.closest('[data-confirm]')) onConfirm?.();
 });
 
 document.addEventListener('keydown', e => {
@@ -74,6 +96,7 @@ export function setSheet({ title, body, mount }) {
   bodyEl.innerHTML = body;
   bodyEl.scrollTop = 0;
   if (mount) mount(bodyEl);
+  bindSelectAll(bodyEl);
 }
 
 /* --- toaster ------------------------------------------------------------ */
@@ -143,10 +166,29 @@ export function field({ label, hint, control }) {
     </div>`;
 }
 
-export function textInput({ name, value = '', placeholder = '', type = 'text', autofocus = false, attrs = '' }) {
+export function textInput({
+  name, value = '', placeholder = '', type = 'text',
+  autofocus = false, selectOnFocus = false, attrs = '',
+}) {
   return `<input class="input" type="${type}" name="${esc(name)}" value="${esc(value)}"
     placeholder="${esc(placeholder)}" autocomplete="off" enterkeyhint="done"
-    ${autofocus ? 'data-autofocus' : ''} ${attrs}>`;
+    ${autofocus ? 'data-autofocus' : ''} ${selectOnFocus ? 'data-selectall' : ''} ${attrs}>`;
+}
+
+/**
+ * Entering a field marked `selectOnFocus` selects what is already there, so the
+ * first keystroke replaces it instead of landing wherever the caret happened to
+ * fall. A second, deliberate tap still positions the caret normally.
+ */
+export function bindSelectAll(root) {
+  root.querySelectorAll('[data-selectall]').forEach(el => {
+    let armed = false;
+    const all = () => { try { el.setSelectionRange(0, el.value.length); } catch { /* unsupported type */ } };
+    el.addEventListener('focus', () => { armed = true; requestAnimationFrame(all); });
+    // iOS places the caret on the tap that follows focus, undoing the selection.
+    el.addEventListener('click', () => { if (armed) { all(); armed = false; } });
+    el.addEventListener('blur', () => { armed = false; });
+  });
 }
 
 export function textArea({ name, value = '', placeholder = '' }) {

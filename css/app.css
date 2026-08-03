@@ -1016,6 +1016,11 @@ svg {
 }
 .sheet__close svg { width: 17px; height: 17px; }
 
+/* Head-bar affirmative action, sized to sit level with the close cross. */
+.sheet__actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.sheet__act { width: 36px; height: 36px; border-radius: var(--r-pill); }
+.sheet__act svg { width: 18px; height: 18px; }
+
 .sheet__body {
   flex: 1;
   overflow-y: auto;
