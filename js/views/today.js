@@ -1,6 +1,6 @@
 /* ==========================================================================
-   Today — the landing view. What you are eating, what needs using up, and
-   how much is still outstanding on the list.
+   Today — a pastel hero card for the next meal, three tappable figures, then
+   today's slots and whatever needs eating first.
    ========================================================================== */
 
 import * as store from '../store.js';
@@ -27,21 +27,55 @@ function currentMealId() {
   return 'dinner';
 }
 
-function headline(plan, expiringSoon, outstanding) {
-  const planned = MEALS.filter(m => plan[m.id]);
+/** The pastel card: whatever is most worth saying, said big. */
+function hero(plan, urgent, outstanding) {
   const next = MEALS.find(m => plan[m.id] && !plan[m.id].done);
 
-  if (!planned.length) {
-    return 'Nothing planned yet — start with tonight’s dinner and the list will follow.';
-  }
   if (next) {
     const s = plan[next.id];
-    const where = s.place === 'work' ? ' at work' : '';
-    return `Next up: <strong>${esc(s.name)}</strong>${where}.`;
+    const place = placeOf(s.place);
+    const froms = (s.items || []).filter(i => i.source === 'inv').length;
+    const buys = (s.items || []).filter(i => i.source === 'buy').length;
+    return `
+      <div class="hero">
+        <p class="hero__eyebrow">${icon(next.icon)}Next up · ${esc(next.label)}</p>
+        <p class="hero__line">
+          ${esc(s.name)}
+          ${s.note ? `<small>${esc(s.note)}</small>` : ''}
+        </p>
+        <div class="hero__foot">
+          <span class="hero__tag">${icon(place.icon)}${esc(place.label)}</span>
+          ${froms ? `<span class="hero__tag">${icon('fridge')}${froms} from stock</span>` : ''}
+          ${buys ? `<span class="hero__tag">${icon('cart')}${buys} to buy</span>` : ''}
+        </div>
+      </div>`;
   }
-  if (expiringSoon) return `All three meals logged. ${plural(expiringSoon, 'item')} still needs using up.`;
-  if (outstanding) return `All three meals logged. ${plural(outstanding, 'thing')} left to buy.`;
-  return 'All three meals logged. Nothing outstanding — good day.';
+
+  const planned = MEALS.filter(m => plan[m.id]).length;
+  const line = !planned
+    ? 'Nothing planned yet'
+    : urgent
+      ? `${plural(urgent, 'thing')} to use up`
+      : outstanding
+        ? `${plural(outstanding, 'thing')} left to buy`
+        : 'All done for today';
+  const sub = !planned
+    ? 'Start with tonight’s dinner — the shopping list follows on its own.'
+    : urgent
+      ? 'All three meals logged. Worth planning these in next.'
+      : outstanding
+        ? 'All three meals logged. The list is waiting on the shop.'
+        : 'Three meals logged and nothing outstanding.';
+
+  return `
+    <div class="hero">
+      <p class="hero__eyebrow">${icon('spark')}${esc(greeting())}</p>
+      <p class="hero__line">${esc(line)}<small>${esc(sub)}</small></p>
+      ${!planned ? `
+        <div class="hero__foot">
+          <span class="hero__tag">${icon('plus')}Tap a meal below</span>
+        </div>` : ''}
+    </div>`;
 }
 
 export default {
@@ -66,14 +100,20 @@ export default {
 
     root.innerHTML = `
       <section class="section">
-        <div class="hero">
-          <p class="hero__eyebrow">${esc(greeting())}</p>
-          <p class="hero__line">${headline(plan, urgent.length, list.outstanding)}</p>
-          <div class="hero__stats">
-            <div class="hero__stat"><b>${plannedN}<small>/3</small></b><span>Planned</span></div>
-            <div class="hero__stat"><b>${urgent.length}</b><span>Use up</span></div>
-            <div class="hero__stat"><b>${list.outstanding}</b><span>To buy</span></div>
-          </div>
+        ${hero(plan, urgent.length, list.outstanding)}
+      </section>
+
+      <section class="section">
+        <div class="stattrio">
+          <button class="stattile" type="button" data-act="open-plan">
+            <b>${plannedN}<small>/3</small></b><span>Meals planned</span>
+          </button>
+          <button class="stattile ${urgent.length ? 'stattile--pink' : ''}" type="button" data-act="open-inventory">
+            <b>${urgent.length}</b><span>Use up now</span>
+          </button>
+          <button class="stattile ${list.outstanding ? 'stattile--amber' : ''}" type="button" data-act="open-shop">
+            <b>${list.outstanding}</b><span>To buy</span>
+          </button>
         </div>
       </section>
 
@@ -83,7 +123,7 @@ export default {
           <button class="btn btn--quiet btn--sm" type="button" data-act="open-plan">Whole week</button>
         </div>
         <div class="slots">
-          ${MEALS.map(m => slotCard(date, m, plan[m.id])).join('')}
+          ${MEALS.map(m => slotCard(m, plan[m.id])).join('')}
         </div>
       </section>
 
@@ -94,28 +134,23 @@ export default {
             <span class="section__note">${plural(soon.length, 'item')}</span>
           </div>
           <div class="rows">
-            ${soon.slice(0, 6).map(expiryRow).join('')}
+            ${soon.slice(0, 5).map(expiryRow).join('')}
           </div>
-          ${soon.length > 6 ? `
+          ${soon.length > 5 ? `
             <button class="btn btn--quiet btn--sm" type="button" data-act="open-inventory"
-              style="margin:8px auto 0;display:flex">See all ${soon.length}</button>` : ''}
+              style="margin:10px auto 0;display:flex">See all ${soon.length}</button>` : ''}
         </section>` : ''}
 
       <section class="section">
-        <div class="section__head"><h2 class="section__title">Quick add</h2></div>
         <div class="stack">
           <button class="btn btn--ghost btn--block" type="button" data-act="add-item">
-            ${icon('fridge')}Something new in stock
-          </button>
-          <button class="btn btn--ghost btn--block" type="button" data-act="open-shop">
-            ${icon('cart')}${list.outstanding ? `Shopping list · ${plural(list.outstanding, 'item')}` : 'Shopping list'}
+            ${icon('fridge')}Add to stock
           </button>
         </div>
-      </section>
-
-      <p class="field__hint" style="text-align:center;margin-top:26px;opacity:.7">
-        Munch keeps everything on this device only.
-      </p>`;
+        <p class="field__hint" style="text-align:center;margin-top:20px;opacity:.7">
+          Everything stays on this device.
+        </p>
+      </section>`;
 
     /* --- bindings --- */
 
@@ -130,34 +165,30 @@ export default {
     });
 
     root.querySelectorAll('[data-act]').forEach(el => {
-      el.addEventListener('click', () => {
-        const act = el.dataset.act;
-        if (act === 'open-plan') ctx.go('plan');
-        else if (act === 'open-shop') ctx.go('shop');
-        else if (act === 'open-inventory') ctx.go('inventory');
-        else if (act === 'add-item') openItemEditor({ after: ctx.refresh });
-        else if (act === 'settings') ctx.openSettings();
-      });
+      el.addEventListener('click', () => this.onAction(el.dataset.act, ctx));
     });
 
-    // Nudge the meal that fits the time of day.
     const focusMeal = root.querySelector(`[data-slot="${currentMealId()}"]`);
     if (focusMeal && !plan[currentMealId()]) focusMeal.classList.add('fade-in');
   },
 
   onAction(act, ctx) {
-    if (act === 'settings') ctx.openSettings();
+    if (act === 'open-plan') ctx.go('plan');
+    else if (act === 'open-shop') ctx.go('shop');
+    else if (act === 'open-inventory') ctx.go('inventory');
+    else if (act === 'add-item') openItemEditor({ after: ctx.refresh });
+    else if (act === 'settings') ctx.openSettings();
   },
 };
 
-function slotCard(date, meal, s) {
+function slotCard(meal, s) {
   if (!s) {
     return `
       <button class="slot slot--${meal.id} is-empty" type="button" data-slot="${meal.id}">
         <span class="slot__mark">${icon(meal.icon)}</span>
         <span class="slot__main">
           <span class="slot__kicker">${esc(meal.label)}</span>
-          <span class="slot__name">Nothing planned — tap to add</span>
+          <span class="slot__name">Nothing planned</span>
         </span>
         <span class="slot__chev">${icon('plus')}</span>
       </button>`;
@@ -175,8 +206,8 @@ function slotCard(date, meal, s) {
         <span class="slot__name">${esc(s.name)}</span>
         <span class="slot__meta">
           ${place.id === 'work' ? pill(place.label, 'accent', place.icon) : ''}
-          ${froms ? pill(`${froms} from stock`, 'primary') : ''}
           ${buys ? pill(`${buys} to buy`, 'warn', 'cart') : ''}
+          ${!buys && froms ? pill('All in stock', 'primary', 'check') : ''}
           ${s.done ? pill('Eaten', 'ok', 'check') : ''}
         </span>
       </span>
@@ -186,10 +217,11 @@ function slotCard(date, meal, s) {
 
 function expiryRow(it) {
   const ex = expiryInfo(it.useBy);
+  const cat = store.catOf(it.category);
   const loc = store.locationOf(it.locId);
   return `
     <button class="row" type="button" data-peek="${esc(it.id)}">
-      <span class="row__lead" style="background:${esc(store.catOf(it.category).colour)}1F;color:${esc(store.catOf(it.category).colour)}">
+      <span class="row__lead" style="background:${esc(cat.colour)}26;color:${esc(cat.colour)}">
         ${esc(initials(it.name))}
       </span>
       <span class="row__main">

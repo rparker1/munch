@@ -5,7 +5,7 @@
    offline. Assets: stale-while-revalidate.
    ========================================================================== */
 
-const VERSION = 'munch-v1';
+const VERSION = 'munch-v2';
 const SHELL = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const SHELL = [
   './js/ui.js',
   './js/util.js',
   './js/icons.js',
+  './js/charts.js',
   './js/views/today.js',
   './js/views/plan.js',
   './js/views/inventory.js',

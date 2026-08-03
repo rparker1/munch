@@ -20,6 +20,20 @@ the inventory.
 No accounts, no server, no network calls. Everything lives in the browser's local
 storage on the device.
 
+## Look
+
+Dark only, and deliberately so: pastel mint, pink and amber on true black, with
+oversized numerals, generous radii, separated pill rows and a floating tab bar.
+A light theme cannot carry that palette, so there isn't one — the app ignores the
+system light/dark setting rather than shipping a washed-out second skin.
+
+Type is `ui-rounded`, which resolves to SF Pro Rounded on Apple hardware. It is
+the geometric, friendly cut the layout is drawn for and costs no download, which
+matters for an app that has to work offline.
+
+The three figures — Today's stat tiles, Plan's column chart, Shop's donut — are
+hand-built SVG and CSS in `js/charts.js`. No chart library.
+
 ## Live site
 
 The app is deployed to GitHub Pages from `main` by
@@ -60,7 +74,7 @@ python3 -m http.server 8765
 
 ```
 index.html              app shell — top bar, viewport, tab bar, sheet host
-css/app.css             design system: tokens, components, light and dark
+css/app.css             design system: tokens and components (dark only)
 manifest.webmanifest    install metadata and home-screen shortcuts
 sw.js                   offline cache (network-first for navigations)
 js/
@@ -69,6 +83,7 @@ js/
   ui.js                 bottom sheet, toaster, form fragments
   util.js               dates, formatting, small DOM helpers
   icons.js              inline SVG icon set
+  charts.js             donut, column chart, stat bars — hand-built SVG
   views/                today, plan, inventory, shop
   editors/              the sheets: meal, inventory item, shopping line
 icons/                  generated PNG and SVG app icons
@@ -92,13 +107,31 @@ python3 tools/make-icons.py
 
 ## Tests
 
-Two Playwright scripts. `logic.mjs` drives the real store module in the browser
-and asserts on the data model — merging, drawing down stock, undo, the buy →
-put away → re-point flow, the horizon, home/work separation. `smoke.mjs` walks
-the UI at iPhone dimensions, screenshots every view in both colour schemes, and
-fails on any console error or horizontal overflow.
+Three scripts, cheapest first.
+
+`syntax.mjs` parses every JS file as an ES module. It needs no browser and no
+dependencies. **Do not replace it with `node --check foo.js`** — for a `.js` file
+Node parses as CommonJS, whose body is function-wrapped, so things that are
+illegal in a module (a stray top-level `return`, say) pass silently. It copies
+each file to `.mjs` first to force module parsing, which is how the browser reads
+them.
+
+`logic.mjs` drives the real store module in the browser and asserts on the data
+model — merging, drawing down stock, undo, the buy → put away → re-point flow,
+the horizon, home/work separation, persistence across a reload.
+
+`smoke.mjs` walks the UI at iPhone dimensions and screenshots every view. It
+fails fast if the app does not boot, then checks each view for layout width and a
+tappable tab bar. Note what it does *not* do: compare `scrollWidth` to
+`innerWidth`. Under mobile emulation Chromium widens the layout viewport to
+swallow overflowing content and scales the page down, so both numbers grow
+together — the check passes while the real page is zoomed out and the fixed tab
+bar has been pushed off screen. Comparing `innerWidth` to the device width
+catches it.
 
 ```sh
+node tests/syntax.mjs
+
 npm i -D playwright
 python3 -m http.server 8765 &
 node tests/logic.mjs

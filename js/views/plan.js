@@ -1,12 +1,13 @@
 /* ==========================================================================
-   Plan — a week at a time, three slots a day, with the shopping consequences
-   of each meal shown inline.
+   Plan — the week as a column chart you tap to choose a day, then that day's
+   three slots and the shopping consequences of each.
    ========================================================================== */
 
 import * as store from '../store.js';
 import { MEALS, placeOf } from '../store.js';
 import { esc, today, addDays, weekStart, niceDate, dow, dayNum, shortDate, plural } from '../util.js';
 import { icon } from '../icons.js';
+import { bars } from '../charts.js';
 import { pill, toast, confirmSheet } from '../ui.js';
 import { openMealEditor } from '../editors/meal.js';
 
@@ -19,8 +20,7 @@ export default {
   title: () => 'Plan',
 
   sub() {
-    const end = addDays(ui.week, 6);
-    return `${shortDate(ui.week)} – ${shortDate(end)}`;
+    return `${shortDate(ui.week)} – ${shortDate(addDays(ui.week, 6))}`;
   },
 
   actions: () => `
@@ -37,26 +37,45 @@ export default {
 
     const days = Array.from({ length: 7 }, (_, i) => addDays(ui.week, i));
     const plan = store.dayPlan(ui.date);
+    const plannedTotal = days.reduce((n, d) => n + store.plannedCount(d), 0);
     const weekBuys = countWeekBuys(days);
     const isThisWeek = ui.week === weekStart(today());
 
     root.innerHTML = `
       <section class="section">
-        <div class="weekrow">
-          ${days.map(d => dayChip(d)).join('')}
+        <div class="card" style="padding:20px 18px 16px">
+          <span class="donut__cap">Meals planned this week</span>
+          <span class="figure" style="margin-top:6px">${plannedTotal}<small>/21</small></span>
+          <div style="margin-top:20px">
+            ${bars({
+              attr: 'day',
+              active: ui.date,
+              max: 3,
+              ticks: ['3', '2', '1', '0'],
+              items: days.map(d => {
+                const n = store.plannedCount(d);
+                return {
+                  key: d,
+                  label: dow(d),
+                  value: n,
+                  tip: `${n} of 3`,
+                };
+              }),
+            })}
+          </div>
         </div>
         ${!isThisWeek ? `
           <button class="btn btn--quiet btn--sm" type="button" data-act="thisweek"
-            style="margin:8px auto 0;display:flex">${icon('refresh')}Back to this week</button>` : ''}
+            style="margin:10px auto 0;display:flex">${icon('refresh')}Back to this week</button>` : ''}
       </section>
 
       <section class="section">
         <div class="section__head">
           <h2 class="section__title">${esc(niceDate(ui.date))}</h2>
-          <span class="section__note">${store.plannedCount(ui.date)} of 3 planned</span>
+          <span class="section__note">${store.plannedCount(ui.date)} of 3</span>
         </div>
         <div class="slots">
-          ${MEALS.map(m => planSlot(ui.date, m, plan[m.id])).join('')}
+          ${MEALS.map(m => planSlot(m, plan[m.id])).join('')}
         </div>
       </section>
 
@@ -66,7 +85,7 @@ export default {
           ${weekBuys ? `<span class="section__note">${plural(weekBuys, 'item')} to buy</span>` : ''}
         </div>
         <div class="rows">
-          ${days.filter(d => d !== ui.date).map(d => weekRow(d)).join('')}
+          ${days.filter(d => d !== ui.date).map(weekRow).join('')}
         </div>
       </section>
 
@@ -83,8 +102,8 @@ export default {
                 <i>${esc(store.mealOf(l.mealId).label)} · ${esc(plural(l.items.length, 'item'))}</i>
               </button>`).join('')}
           </div>
-          <p class="field__hint" style="text-align:center;margin-top:8px">
-            Tap a saved meal to drop it onto ${esc(niceDate(ui.date).toLowerCase())}.
+          <p class="field__hint" style="text-align:center;margin-top:10px">
+            Tap one to drop it onto ${esc(niceDate(ui.date).toLowerCase())}.
           </p>
         </section>` : ''}`;
 
@@ -123,20 +142,7 @@ export default {
 
 /* --- pieces ------------------------------------------------------------- */
 
-function dayChip(d) {
-  const n = store.plannedCount(d);
-  return `
-    <button class="day${d === today() ? ' is-today' : ''}" type="button"
-      data-day="${esc(d)}" aria-pressed="${d === ui.date}">
-      <span class="day__dow">${esc(dow(d))}</span>
-      <span class="day__n">${dayNum(d)}</span>
-      <span class="day__dots">
-        ${MEALS.map((_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}
-      </span>
-    </button>`;
-}
-
-function planSlot(date, meal, s) {
+function planSlot(meal, s) {
   if (!s) {
     return `
       <button class="slot slot--${meal.id} is-empty" type="button" data-slot="${meal.id}">
@@ -166,8 +172,8 @@ function planSlot(date, meal, s) {
           </span>` : ''}
         <span class="slot__meta">
           ${place.id === 'work' ? pill(place.label, 'accent', place.icon) : ''}
-          ${froms.length ? pill(`${froms.length} from stock`, 'primary') : ''}
           ${buys.length ? pill(`${buys.length} to buy`, 'warn', 'cart') : ''}
+          ${!buys.length && froms.length ? pill('All in stock', 'primary', 'check') : ''}
           ${s.done ? pill('Eaten', 'ok', 'check') : ''}
         </span>
       </span>

@@ -17,17 +17,19 @@ export const MEALS = [
   { id: 'dinner',    label: 'Dinner',    icon: 'moon' },
 ];
 
+/* Aisle order doubles as the walk round the shop. Colours are pastels pitched
+   for a black background, in the same family as the mint/pink/amber accents. */
 export const CATEGORIES = [
-  { id: 'produce',  label: 'Fruit & veg',   colour: '#4C9A5E' },
-  { id: 'protein',  label: 'Meat & fish',   colour: '#C0563F' },
-  { id: 'dairy',    label: 'Dairy & eggs',  colour: '#D2A03C' },
-  { id: 'bakery',   label: 'Bakery',        colour: '#B07B4A' },
-  { id: 'cupboard', label: 'Cupboard',      colour: '#7A6B55' },
-  { id: 'frozen',   label: 'Frozen',        colour: '#4A86A8' },
-  { id: 'drinks',   label: 'Drinks',        colour: '#8256A8' },
-  { id: 'snacks',   label: 'Snacks',        colour: '#C4708F' },
-  { id: 'household',label: 'Household',     colour: '#6C7480' },
-  { id: 'other',    label: 'Other',         colour: '#8D8378' },
+  { id: 'produce',  label: 'Fruit & veg',  colour: '#7FD9AE' },
+  { id: 'protein',  label: 'Meat & fish',  colour: '#F4A79D' },
+  { id: 'dairy',    label: 'Dairy & eggs', colour: '#F9D08A' },
+  { id: 'bakery',   label: 'Bakery',       colour: '#E5BE93' },
+  { id: 'cupboard', label: 'Cupboard',     colour: '#CFC2A2' },
+  { id: 'frozen',   label: 'Frozen',       colour: '#9CCFEE' },
+  { id: 'drinks',   label: 'Drinks',       colour: '#C4B2EC' },
+  { id: 'snacks',   label: 'Snacks',       colour: '#F6C5CB' },
+  { id: 'household',label: 'Household',    colour: '#9EB3C4' },
+  { id: 'other',    label: 'Other',        colour: '#8F8F8F' },
 ];
 
 export const UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'bunch', 'loaf', 'bottle'];

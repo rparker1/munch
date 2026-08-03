@@ -1,16 +1,30 @@
 /* ==========================================================================
-   Inventory — what you have in, where it is, and how long it has left.
+   Stock — the count up front, a freshness breakdown, then the shelves.
    ========================================================================== */
 
 import * as store from '../store.js';
 import { PLACES, placeOf } from '../store.js';
 import { esc, qtyLabel, expiryInfo, initials, plural, debounce, daysFromToday } from '../util.js';
 import { icon } from '../icons.js';
+import { statbars } from '../charts.js';
 import { pill, emptyState } from '../ui.js';
 import { openItemEditor, openItemPeek } from '../editors/item.js';
 
 /* View-local UI state — deliberately not persisted. */
 const ui = { query: '', place: '', locId: '', urgentOnly: false };
+
+/** Split the whole inventory into three freshness bands. */
+function freshness(all) {
+  let now = 0, week = 0, later = 0;
+  for (const i of all) {
+    const d = i.useBy ? daysFromToday(i.useBy) : null;
+    if (d === null) later += 1;
+    else if (d <= 2) now += 1;
+    else if (d <= 7) week += 1;
+    else later += 1;
+  }
+  return { now, week, later, total: all.length };
+}
 
 export default {
   id: 'inventory',
@@ -28,12 +42,14 @@ export default {
     <button class="iconbtn iconbtn--primary" type="button" data-act="add" aria-label="Add to stock">${icon('plus')}</button>`,
 
   badge() {
-    const n = store.expiring(1).length;
-    return n || null;
+    return store.expiring(1).length || null;
   },
 
   render(root, ctx) {
     const all = store.get().inventory;
+    const f = freshness(all);
+    const pc = n => (f.total ? (n / f.total) * 100 : 0);
+
     let rows = store.inventory({
       query: ui.query,
       place: ui.place || null,
@@ -45,6 +61,21 @@ export default {
     const locChips = ui.place ? store.locationsFor(ui.place) : [];
 
     root.innerHTML = `
+      ${all.length ? `
+        <section class="section">
+          <div class="card" style="padding:20px 18px">
+            <span class="donut__cap">In stock right now</span>
+            <span class="figure" style="margin-top:6px">${f.total}<small> items</small></span>
+            <div style="margin-top:22px">
+              ${statbars([
+                { label: 'Use up now', figure: String(f.now),   pct: pc(f.now),   colour: 'var(--pink)' },
+                { label: 'This week',  figure: String(f.week),  pct: pc(f.week),  colour: 'var(--amber)' },
+                { label: 'Keeps',      figure: String(f.later), pct: pc(f.later), colour: 'var(--mint)' },
+              ])}
+            </div>
+          </div>
+        </section>` : ''}
+
       <section class="section">
         <div class="search">
           ${icon('search')}
@@ -65,7 +96,7 @@ export default {
           }).join('')}
           ${urgentN ? `
             <button class="chip" type="button" data-urgent aria-pressed="${ui.urgentOnly}"
-              style="${ui.urgentOnly ? '' : 'color:var(--bad)'}">
+              style="${ui.urgentOnly ? '' : 'color:var(--pink)'}">
               Use up soon<span class="chip__n">${urgentN}</span>
             </button>` : ''}
         </div>
@@ -97,12 +128,7 @@ export default {
               action: all.length ? null : { act: 'add', label: 'Add your first item' },
             })}
           </div>`}
-      </section>
-
-      ${rows.length ? `
-        <p class="field__hint" style="text-align:center;margin-top:18px;opacity:.75">
-          Tap an item to adjust the amount. ${store.get().inventory.filter(i => !i.useBy).length} without a use-by date.
-        </p>` : ''}`;
+      </section>`;
 
     /* --- bindings --- */
 
@@ -139,10 +165,7 @@ export default {
     });
 
     root.querySelectorAll('[data-act=add]').forEach(el => {
-      el.addEventListener('click', () => openItemEditor({
-        prefill: { locId: ui.locId || store.locationsFor(ui.place || 'home')[0]?.id },
-        after: ctx.refresh,
-      }));
+      el.addEventListener('click', () => this.onAction('add', ctx));
     });
   },
 
@@ -179,7 +202,7 @@ function renderGroups(rows) {
       ${ordered.map(([locId, items]) => `
         <div class="group">
           <div class="group__label">
-            ${icon(locId === 'none' ? 'box' : (placeOf(store.locationOf(locId)?.place).icon))}
+            ${icon(locId === 'none' ? 'box' : placeOf(store.locationOf(locId)?.place).icon)}
             <span>${esc(locId === 'none' ? 'Unassigned' : store.locationLabel(locId))}</span>
             <b>${items.length}</b>
           </div>
@@ -193,14 +216,14 @@ function itemRow(it) {
   const cat = store.catOf(it.category);
   return `
     <button class="row" type="button" data-peek="${esc(it.id)}">
-      <span class="row__lead" style="background:${esc(cat.colour)}1F;color:${esc(cat.colour)}">
+      <span class="row__lead" style="background:${esc(cat.colour)}26;color:${esc(cat.colour)}">
         ${esc(initials(it.name))}
       </span>
       <span class="row__main">
         <span class="row__name">${esc(it.name)}</span>
         <span class="row__sub">
           ${esc(cat.label)}
-          ${it.note ? `<i class="dot"></i>${esc(it.note.slice(0, 28))}` : ''}
+          ${it.note ? `<i class="dot"></i>${esc(it.note.slice(0, 26))}` : ''}
         </span>
       </span>
       <span class="row__tail">
