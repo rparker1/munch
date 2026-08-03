@@ -29,7 +29,12 @@ The app is deployed to GitHub Pages from `main` by
 2. Push to `main` (or run the workflow manually from the Actions tab).
 
 The published URL is `https://<owner>.github.io/<repo>/`. Everything is
-path-relative, so it works from a subdirectory without configuration.
+path-relative — the service worker scope, the manifest `start_url` and every
+asset — so it works from a subdirectory without configuration.
+
+The workflow stages only the app itself (`index.html`, `css/`, `js/`, `icons/`,
+`sw.js`, `manifest.webmanifest`). The tests, the icon generator and this README
+stay in the repo rather than being served from the live site.
 
 ## Installing on an iPhone
 

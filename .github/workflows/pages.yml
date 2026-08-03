@@ -24,12 +24,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No build step — the app is plain ES modules and CSS, served as-is.
       - uses: actions/configure-pages@v5
+
+      # No build step — the app is plain ES modules and CSS. This only separates
+      # what gets served from what is repo furniture (tests, icon generator, docs).
+      - name: Stage the site
+        run: |
+          mkdir -p _site
+          cp -R index.html manifest.webmanifest sw.js .nojekyll css js icons _site/
+          find _site -type f | sort
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
       - id: deploy
         uses: actions/deploy-pages@v4
