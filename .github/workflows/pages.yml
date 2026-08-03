@@ -32,6 +32,19 @@ jobs:
         run: |
           mkdir -p _site
           cp -R index.html manifest.webmanifest sw.js .nojekyll css js icons _site/
+
+          # Stamp the build so the service worker can defeat the HTTP cache.
+          # Pages serves assets with a fixed Cache-Control: max-age=600 and a
+          # worker cannot override it, so the worker requests each asset with a
+          # ?b=<build> tag the cache has never seen. That tag has to change every
+          # deploy or an installed app keeps booting the previous version for ten
+          # minutes. See the comment in sw.js.
+          BUILD="${GITHUB_SHA:0:12}"
+          sed -i "s/^const BUILD = 'dev';/const BUILD = '${BUILD}';/" _site/sw.js
+          grep -q "const BUILD = '${BUILD}';" _site/sw.js \
+            || { echo "::error::failed to stamp BUILD into sw.js"; exit 1; }
+          echo "stamped build ${BUILD}"
+
           find _site -type f | sort
 
       - uses: actions/upload-pages-artifact@v3

@@ -253,10 +253,26 @@ function watchLifecycle() {
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol === 'file:') return;
+
+  // Whether a worker was already driving this page decides what a later
+  // controller change means: a first install (nothing to do) or an update
+  // that has just swapped the assets under us (reload once onto the new set).
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => {
-      console.warn('Munch: service worker not registered', err);
-    });
+    // updateViaCache: 'none' keeps sw.js itself out of the HTTP cache. GitHub
+    // Pages serves it with a ten-minute max-age, which is long enough for an
+    // installed app to keep booting the previous version after a deploy.
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(reg => reg.update().catch(() => {}))
+      .catch(err => console.warn('Munch: service worker not registered', err));
   });
 }
 
