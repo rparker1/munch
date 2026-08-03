@@ -160,14 +160,25 @@ The `service_role` key has none of those protections and must never be committed
 
 ### Signing in on iOS
 
-Two ways in, because the obvious one is unreliable on a phone. Tapping the emailed
-link opens Safari, and a Home Screen web app does not necessarily share Safari's
-storage — so the link can sign the *browser* in while the installed app still shows
-signed out. The account block therefore also takes the link pasted in as text,
-which keeps the exchange inside whichever context you are actually looking at.
+**A tapped magic link cannot sign an installed app in.** A Home Screen web app keeps
+its own storage, separate from Safari, and iOS will not open an emailed URL into it
+— so following the link always signs the browser in, never the bookmark. No redirect
+setting changes this. The token has to be exchanged *inside* the app, which is why
+there are three routes and none of them is "tap the link":
 
-Either way, Today's top strip says plainly whether you are signed in, so it never
-has to be guessed at.
+| route | when to use it |
+| --- | --- |
+| **transfer code** | Fastest, and needs no email. On a device already signed in, Settings → *Copy transfer code*, then paste it into Settings on the other one. It carries a refresh token, so treat it like a password; redeeming it may sign the first device out, which is usually the point. |
+| **six-digit code** | Type the code from the email. Needs `{{ .Token }}` in the Magic Link template (Authentication → Emails), or the email only contains a link. |
+| **pasted link** | Copy the link out of the email rather than tapping it, and paste it in. Works with the default email template. |
+
+Today's top strip says plainly whether you are signed in, so it never has to be
+guessed at.
+
+**Supabase's built-in email is limited to a couple of messages an hour** and is not
+meant for real use. Set up custom SMTP (Authentication → Emails → SMTP Settings —
+Resend, Postmark and the like all have free tiers) to lift that. The transfer code
+exists partly so that hitting the limit does not block you.
 
 **One manual step remains.** Sign-in links will not return to the app until the
 site is on the allow-list: Supabase dashboard → Authentication → URL Configuration

@@ -141,6 +141,45 @@ export function consumeAuthRedirect() {
 }
 
 /**
+ * Sign in with the six-digit code from the email.
+ *
+ * The most reliable route into an installed app. A Home Screen web app on iOS has
+ * its own storage, separate from Safari, and iOS will not open an emailed link
+ * into it — so a tapped link can only ever sign Safari in. Typing a code keeps the
+ * exchange inside the app, and unlike a link it does not matter which app the
+ * email was read in.
+ *
+ * Needs `{{ .Token }}` in the Magic Link email template (Supabase dashboard →
+ * Authentication → Emails), otherwise the email carries only a link.
+ */
+export async function signInWithCode(email, code) {
+  if (!cloudConfigured()) throw new Error('Supabase is not configured');
+  const token = String(code || '').replace(/\s+/g, '');
+  if (!token) throw new Error('Enter the code from the email');
+  if (!email) throw new Error('Enter the email you asked for the code with');
+
+  const res = await fetch(`${SUPABASE.url}/auth/v1/verify`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ email, token, type: 'email' }),
+  });
+  if (!res.ok) throw await readError(res, 'That code was not accepted — it may have expired');
+  return adopt(await res.json());
+}
+
+/** Remember which address a code was sent to, so it need not be retyped. */
+const PENDING_KEY = 'munch.pendingEmail';
+export function setPendingEmail(email) {
+  try { localStorage.setItem(PENDING_KEY, email); } catch { /* private mode */ }
+}
+export function pendingEmail() {
+  try { return localStorage.getItem(PENDING_KEY) || ''; } catch { return ''; }
+}
+export function clearPendingEmail() {
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* nothing to do */ }
+}
+
+/**
  * Sign in from the text of the emailed link, pasted into the app.
  *
  * Needed because a magic link cannot be relied on to return *into* an installed
@@ -185,6 +224,69 @@ export async function signInWithPastedLink(text) {
     body: JSON.stringify({ token_hash: token, type }),
   });
   if (!res.ok) throw await readError(res, 'That link could not be used — it may have expired');
+  return adopt(await res.json());
+}
+
+/* --- moving a session between contexts ---------------------------------- */
+
+const TRANSFER_PREFIX = 'munch1:';
+
+/**
+ * A code that carries this session to another context, needing no email.
+ *
+ * The case it exists for: a Home Screen web app on iOS keeps its own storage,
+ * separate from Safari, and iOS will not open an emailed link into it — so signing
+ * in from the browser cannot reach the installed app however the link is handled.
+ * Copying a code across is the one route that does not involve another email,
+ * which matters because Supabase's built-in mail is limited to a couple of
+ * messages an hour.
+ *
+ * It contains the refresh token, so it is as sensitive as a password and is only
+ * ever meant to be pasted into your own app.
+ */
+export function exportTransfer() {
+  if (!session?.refreshToken) throw new Error('Nothing to transfer — not signed in');
+  const ref = new URL(SUPABASE.url).hostname.split('.')[0];
+  const blob = JSON.stringify({ v: 1, ref, rt: session.refreshToken, em: session.email });
+  // btoa cannot take multi-byte characters, so go via UTF-8 bytes.
+  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(blob)));
+  return TRANSFER_PREFIX + b64.replace(/=+$/, '');
+}
+
+/**
+ * Redeem a transfer code.
+ *
+ * Supabase rotates refresh tokens, so redeeming here may sign the context that
+ * produced the code out. For moving a session to where you actually want it, that
+ * is the desired outcome rather than a problem.
+ */
+export async function signInWithTransfer(code) {
+  if (!cloudConfigured()) throw new Error('Supabase is not configured');
+  const raw = String(code || '').trim();
+  if (!raw.startsWith(TRANSFER_PREFIX)) {
+    throw new Error('That is not a transfer code — it should start with “munch1:”');
+  }
+
+  let data;
+  try {
+    const b64 = raw.slice(TRANSFER_PREFIX.length);
+    const bytes = Uint8Array.from(atob(b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), '=')),
+                                  c => c.charCodeAt(0));
+    data = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new Error('That code is incomplete — copy the whole thing');
+  }
+
+  const ref = new URL(SUPABASE.url).hostname.split('.')[0];
+  if (data.ref && data.ref !== ref) throw new Error('That code belongs to a different Munch project');
+  if (!data.rt) throw new Error('That code has no session in it');
+
+  const res = await fetch(`${SUPABASE.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ refresh_token: data.rt }),
+  });
+  if (!res.ok) throw await readError(res, 'That code has expired — make a fresh one');
   return adopt(await res.json());
 }
 
