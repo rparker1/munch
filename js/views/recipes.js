@@ -9,6 +9,7 @@ import { esc, plural } from '../util.js';
 import { icon } from '../icons.js';
 import { emptyState } from '../ui.js';
 import { openMealEditor } from '../editors/meal.js';
+import { openRecipe } from '../editors/recipe.js';
 
 /* View-local UI state — deliberately not persisted, as in the other views. */
 const ui = { query: '' };
@@ -66,9 +67,9 @@ export default {
       if (nq) { nq.focus(); nq.setSelectionRange(pos, pos); }
     });
 
-    // The rows carry data-open but are inert until the reader exists. Deliberate
-    // ordering, not an oversight: importing a module that is not there yet would
-    // stop the whole app loading, not just this view.
+    root.querySelectorAll('[data-open]').forEach(el => {
+      el.addEventListener('click', () => openRecipe({ id: el.dataset.open, after: ctx.refresh }));
+    });
 
     root.querySelectorAll('[data-act=import]').forEach(el => {
       el.addEventListener('click', () => this.onAction('import', ctx));

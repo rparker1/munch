@@ -734,6 +734,10 @@ export const library = mealId => state.library.filter(
 );
 
 export function removeFromLibrary(id) {
+  // Snapshot first, as removeInvItem does. Deleting a recipe is destructive and the
+  // reader offers Undo; without this that button either does nothing or reverts some
+  // unrelated earlier action, which is worse than not offering it.
+  snapshot('Recipe deleted');
   state.library = state.library.filter(l => l.id !== id);
   commit();
 }

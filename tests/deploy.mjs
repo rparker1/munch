@@ -117,8 +117,11 @@ check('a module change reaches an installed app', gotJs === 'DEPLOYED', gotJs);
 await ctx.setOffline(true);
 await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
 await page.waitForTimeout(800);
+// Non-zero, not an exact count. The point is that the shell came up from cache with
+// the network off; how many tabs there happen to be is a product decision, and pinning
+// it made adding one look like an offline-boot regression.
 const offlineTabs = await page.locator('.tab').count();
-check('the app still boots offline', offlineTabs === 4, `${offlineTabs} tabs`);
+check('the app still boots offline', offlineTabs > 0, `${offlineTabs} tabs`);
 await ctx.setOffline(false);
 
 await browser.close();

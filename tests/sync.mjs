@@ -198,7 +198,10 @@ await page.waitForTimeout(2500);
 const offline = await page.evaluate(async () => {
   const { store, sync, cloud } = window.munch;
   return {
-    booted: document.querySelectorAll('.tab').length === 4,
+    // Non-zero, not an exact count: this proves the shell came up, and pinning the
+    // number meant adding a tab failed here as "did not boot with the server
+    // unreachable", which points nowhere near the truth.
+    booted: document.querySelectorAll('.tab').length > 0,
     signedIn: cloud.signedIn(),
     // The account workspace, not the device one.
     accountWorkspace: store.get().inventory.length === 0,
