@@ -6,13 +6,17 @@
    ========================================================================== */
 
 import * as store from '../store.js';
+import * as recipe from '../recipe.js';
 import { MEALS, CATEGORIES, UNITS, PLACES, catOf, mealOf, placeOf } from '../store.js';
+import { SUPABASE } from '../config.js';
 import { esc, num, qtyLabel, niceDate, titleCase, normName, expiryInfo, initials, plural } from '../util.js';
 import { icon } from '../icons.js';
 import {
   openSheet, setSheet, closeSheet, toast, confirmSheet,
   field, textInput, textArea, select, segmented, chipGroup, bindPickers, readForm, emptyState,
 } from '../ui.js';
+
+const RECIPE_FN = `${SUPABASE.url}/functions/v1/recipe`;
 
 const unitOptions = ['', ...UNITS].map(u => ({ value: u, label: u || 'no unit' }));
 const catOptions  = CATEGORIES.map(c => ({ id: c.id, label: c.label }));
@@ -98,6 +102,9 @@ export function openMealEditor({ date, mealId, after }) {
           <button class="btn btn--ghost btn--sm" type="button" data-step="inv">${icon('fridge')}From stock</button>
           <button class="btn btn--ghost btn--sm" type="button" data-step="buy">${icon('cart')}To buy</button>
         </div>
+        <button class="btn btn--ghost btn--sm btn--block" type="button" data-step="recipe">
+          ${icon('search')}Find a recipe
+        </button>
 
         ${mismatched.length ? `
           <div class="hintbar">
@@ -145,7 +152,11 @@ export function openMealEditor({ date, mealId, after }) {
       });
 
       root.querySelectorAll('[data-step]').forEach(btn => {
-        btn.addEventListener('click', () => (btn.dataset.step === 'inv' ? fromStock() : toBuy()));
+        btn.addEventListener('click', () => {
+          if (btn.dataset.step === 'inv') fromStock();
+          else if (btn.dataset.step === 'buy') toBuy();
+          else findRecipe();
+        });
       });
 
       root.querySelectorAll('[data-tag-edit]').forEach(btn => {
@@ -460,6 +471,202 @@ export function openMealEditor({ date, mealId, after }) {
       root.querySelector('[data-back]').addEventListener('click', main);
       root.querySelector('[name=name]').addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); add({ keepOpen: true }); }
+      });
+    });
+  }
+
+  /* ------------------------------------------------------- find a recipe -- */
+
+  const reasonText = reason => ({
+    'no-recipe': 'That page does not publish a recipe Munch can read.',
+    blocked: 'That address cannot be fetched.',
+    'too-large': 'That page is too big to read.',
+    timeout: 'That page took too long to respond.',
+    'fetch-failed': 'That page could not be fetched — it may block importers.',
+    'bad-request': 'That does not look like a web address.',
+  }[reason] || 'That page could not be read.');
+
+  function findRecipe(query = '') {
+    const stockNames = store.get().inventory.map(i => i.name);
+    const hits = recipe.searchLibrary(query, store.library(mealId), stockNames);
+
+    const body = `
+      <div class="form">
+        ${field({ label: 'Search your meals', control: textInput({
+          name: 'q', value: query, placeholder: 'e.g. chicken, lemon',
+          autofocus: true, selectOnFocus: true,
+        }) })}
+
+        ${hits.length ? `
+          <div class="rows">
+            ${hits.slice(0, 12).map(h => `
+              <button class="row" type="button" data-pick="${esc(h.entry.id)}">
+                <span class="row__main">
+                  <span class="row__name">${esc(h.entry.name)}</span>
+                  <span class="row__sub">${h.inStock} of ${h.total} already in</span>
+                </span>
+              </button>`).join('')}
+          </div>` : `
+          <p class="field__hint" style="padding:2px">
+            ${query ? 'None of your saved meals match that.' : 'No saved meals yet — import one below.'}
+          </p>`}
+
+        <div class="divider" style="margin:6px 4px"></div>
+
+        ${field({
+          label: 'Import from a link',
+          hint: 'Most recipe sites work. Paste the address of the recipe page.',
+          control: textInput({ name: 'url', placeholder: 'https://…', attrs: 'inputmode="url"' }),
+        })}
+
+        <div class="sheet__foot">
+          <button class="btn btn--ghost" type="button" data-back>Back</button>
+          <button class="btn" type="button" data-go>${icon('search')}Import</button>
+        </div>
+      </div>`;
+
+    show('Find a recipe', body, root => {
+      root.querySelector('[data-back]').addEventListener('click', main);
+
+      root.querySelectorAll('[data-pick]').forEach(btn => {
+        btn.addEventListener('click', () => applyLibrary(btn.dataset.pick));
+      });
+
+      const q = root.querySelector('[name=q]');
+      q.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); findRecipe(q.value); }
+      });
+
+      root.querySelector('[data-go]').addEventListener('click', async () => {
+        const urlEl = root.querySelector('[name=url]');
+        const url = urlEl.value.trim();
+        if (!url) { urlEl.focus(); return; }
+        const btn = root.querySelector('[data-go]');
+        btn.disabled = true;
+        btn.textContent = 'Reading…';
+        try {
+          const res = await fetch(`${RECIPE_FN}?url=${encodeURIComponent(url)}`);
+          const data = await res.json();
+          if (data.ok) reviewRecipe(data.recipe);
+          else pasteRecipe(reasonText(data.reason), url);
+        } catch {
+          pasteRecipe('Could not reach the importer. You may be offline.', url);
+        }
+      });
+    });
+  }
+
+  /* Failure is a route, not a dead end. */
+  function pasteRecipe(why, url = '') {
+    const body = `
+      <div class="form">
+        <div class="hintbar">
+          ${icon('alert')}<span>${esc(why)} Paste the ingredients instead — one per line.</span>
+        </div>
+        ${field({ label: 'Recipe name', control: textInput({ name: 'name', value: '', placeholder: 'e.g. chicken traybake' }) })}
+        ${field({ label: 'Ingredients', control: textArea({
+          name: 'lines', value: '',
+          placeholder: '600g chicken thighs\n2 lemons, halved\n1 tin chickpeas',
+        }) })}
+        <div class="sheet__foot">
+          <button class="btn btn--ghost" type="button" data-back>Back</button>
+          <button class="btn" type="button" data-go>${icon('check')}Read it</button>
+        </div>
+      </div>`;
+
+    show('Paste a recipe', body, root => {
+      root.querySelector('[data-back]').addEventListener('click', () => findRecipe());
+      root.querySelector('[data-go]').addEventListener('click', () => {
+        const f = readForm(root);
+        const lines = f.lines.split('\n').map(l => l.trim()).filter(Boolean);
+        if (!lines.length) { root.querySelector('[name=lines]').focus(); return; }
+        let sourceName = '';
+        try { sourceName = url ? new URL(url).hostname.replace(/^www\./, '') : ''; } catch { /* not a URL */ }
+        reviewRecipe({
+          name: f.name || 'Imported recipe',
+          serves: null,
+          sourceUrl: url,
+          sourceName,
+          ingredients: lines,
+        });
+      });
+    });
+  }
+
+  /* Nothing is written here. Confirming only mutates the in-memory draft, which is
+     persisted when the meal itself is saved — so main()'s existing tap-to-edit
+     covers correcting any one ingredient without a second editor. */
+  function reviewRecipe(r) {
+    const rows = recipe.parseIngredients(r.ingredients)
+      .map(p => ({ ...p, hit: bestStockMatch(p.name, draft.place) }));
+    const inStock = rows.filter(row => row.hit).length;
+
+    const body = `
+      <div class="form">
+        ${field({ label: 'Recipe name', control: textInput({ name: 'name', value: r.name }) })}
+
+        <p class="field__hint" style="padding:2px">
+          ${plural(rows.length, 'ingredient')} · ${inStock} already in stock${r.serves ? ` · serves ${r.serves}` : ''}${r.sourceName ? ` · from ${esc(r.sourceName)}` : ''}
+        </p>
+
+        <div class="rows">
+          ${rows.map((row, i) => `
+            <div class="row row--split">
+              <span class="row__hit" style="cursor:default">
+                <span class="row__main">
+                  <span class="row__name">${esc(row.name)}</span>
+                  <span class="row__sub">
+                    ${esc(qtyLabel(row.qty, row.unit) || 'no amount')} ·
+                    ${row.hit ? 'from stock' : 'to buy'} ·
+                    ${esc(catOf(row.category).label)}
+                  </span>
+                </span>
+              </span>
+              <button class="iconbtn iconbtn--plain" type="button" data-drop="${i}"
+                aria-label="Leave out ${esc(row.name)}">${icon('x')}</button>
+            </div>`).join('')}
+        </div>
+
+        <p class="field__hint" style="padding:2px">
+          Nothing is saved yet. Add them, then tap any ingredient to correct it.
+        </p>
+
+        <div class="sheet__foot">
+          <button class="btn btn--ghost" type="button" data-back>Back</button>
+          <button class="btn" type="button" data-ok>${icon('check')}Add ${plural(rows.length, 'ingredient')}</button>
+        </div>
+      </div>`;
+
+    show('Review the recipe', body, root => {
+      root.querySelector('[data-back]').addEventListener('click', () => findRecipe());
+
+      root.querySelectorAll('[data-drop]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const keep = r.ingredients.filter((_, i) => i !== Number(btn.dataset.drop));
+          if (!keep.length) return findRecipe();
+          reviewRecipe({ ...r, ingredients: keep });
+        });
+      });
+
+      root.querySelector('[data-ok]').addEventListener('click', () => {
+        const f = readForm(root);
+        if (f.name) draft.name = f.name;
+        if (r.serves) {
+          draft.note = draft.note ? `${draft.note}\nServes ${r.serves}` : `Serves ${r.serves}`;
+        }
+        for (const row of rows) {
+          draft.items.push({
+            id: newId(),
+            name: row.name,
+            qty: row.qty,
+            unit: row.unit,
+            category: row.category,
+            source: row.hit ? 'inv' : 'buy',
+            invId: row.hit ? row.hit.id : null,
+          });
+        }
+        main();
+        toast(`${plural(rows.length, 'ingredient')} added`, { iconName: 'check' });
       });
     });
   }
