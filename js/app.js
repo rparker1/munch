@@ -162,10 +162,20 @@ function openSettings() {
           Munch stores everything in this browser. Nothing leaves the device, and clearing your
           browser data clears the app.
         </p>
+
+        <p class="field__hint" style="text-align:center;margin-top:12px">
+          Build <span class="tnum" data-build>checking…</span>
+        </p>
       </div>`,
     mount(root) {
       bindPickers(root);
       bindAccount(root, render);
+
+      runningBuild().then(build => {
+        const el = root.querySelector('[data-build]');
+        if (!el) return;   // the sheet was closed before the worker answered
+        el.textContent = build ?? 'no service worker';
+      });
 
       root.querySelector('[data-segmented=horizonDays]').addEventListener('pick', e => {
         store.setSetting('horizonDays', Number(e.detail));
@@ -490,6 +500,31 @@ function watchLifecycle() {
   });
   window.addEventListener('pagehide', () => { store.flush(); sync.flush(); });
   setInterval(checkDay, 60_000);
+}
+
+/**
+ * Which build is driving this page, asked of the worker itself.
+ *
+ * Deliberately not read by fetching sw.js: that reports what the *server* has,
+ * and those two numbers differ in exactly the case worth diagnosing — an
+ * installed app still running an older worker. Resolves to null when no worker
+ * is in control, which covers a plain http:// LAN server and the moment before
+ * a first install takes over.
+ */
+function runningBuild(timeoutMs = 1500) {
+  const sw = navigator.serviceWorker?.controller;
+  if (!sw) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    const settle = value => { clearTimeout(timer); resolve(value || null); };
+    channel.port1.onmessage = e => settle(e.data);
+    try {
+      sw.postMessage('build', [channel.port2]);
+    } catch {
+      settle(null);   // an older worker with no message handler
+    }
+  });
 }
 
 function registerServiceWorker() {

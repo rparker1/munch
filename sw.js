@@ -135,4 +135,8 @@ self.addEventListener('fetch', event => {
 
 self.addEventListener('message', event => {
   if (event.data === 'skipWaiting') self.skipWaiting();
+  // Which build is actually driving the page. The page cannot work this out for
+  // itself, and fetching this file over the network answers a different question
+  // — see the note on runningBuild() in app.js.
+  else if (event.data === 'build') event.ports[0]?.postMessage(BUILD);
 });
