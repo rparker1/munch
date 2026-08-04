@@ -429,6 +429,101 @@ const results = await page.evaluate(() => {
         store.UNITS.every(u => window.munch.util.STANDARD_UNITS.includes(u)),
         JSON.stringify(store.UNITS.filter(u => !window.munch.util.STANDARD_UNITS.includes(u))));
 
+  /* --- 22. cooking takes a share of a container ------------------------ */
+  const mkJar = (q, rem) => {
+    const id = store.addInvItem({
+      name: `Jar ${Math.random().toString(36).slice(2, 7)}`, qty: q, unit: 'jar',
+      category: 'cupboard', locId, portionName: 'spoon', portionPer: 30,
+    }).id;
+    if (rem != null) store.setRemaining(id, rem);
+    return id;
+  };
+  /* A fresh day per call. Reusing one slot would work but saveSlot inherits `done` from
+     whatever was there before, so each case gets its own to keep failures unambiguous. */
+  let shareDay = 5;
+  const cookWith = (invId, nm, q, u) => {
+    const day = iso(new Date(Date.now() + (shareDay++) * 864e5));
+    store.saveSlot(day, 'lunch', {
+      name: 'Share test', place: 'home',
+      items: [{ name: nm, qty: q, unit: u, category: 'cupboard', source: 'inv', invId }],
+    });
+    return store.cookSlot(day, 'lunch');
+  };
+
+  const loafId = store.addInvItem({
+    name: 'Share loaf', qty: 1, unit: 'loaf', category: 'bakery', locId,
+    portionName: 'slice', portionPer: 20,
+  }).id;
+  cookWith(loafId, 'Share loaf', 2, 'slice');
+  check('portions leave the count alone', store.invItem(loafId)?.qty === 1,
+        String(store.invItem(loafId)?.qty));
+  check('portions come off the open container', store.invItem(loafId)?.remaining === 0.9,
+        String(store.invItem(loafId)?.remaining));
+
+  const j1 = mkJar(1, 0.5);
+  cookWith(j1, store.invItem(j1).name, 3, 'spoon');
+  check('a part-used jar goes down by the share', store.invItem(j1)?.remaining === 0.4,
+        String(store.invItem(j1)?.remaining));
+
+  const j2 = mkJar(1, 0.5);
+  cookWith(j2, store.invItem(j2).name, 18, 'spoon');
+  check('using more than is left removes it', !store.invItem(j2));
+
+  const j3 = mkJar(3, 0.5);
+  cookWith(j3, store.invItem(j3).name, 18, 'spoon');
+  check('spilling over spends one container', store.invItem(j3)?.qty === 2,
+        String(store.invItem(j3)?.qty));
+  check('and carries the remainder', store.invItem(j3)?.remaining === 0.9,
+        String(store.invItem(j3)?.remaining));
+
+  const j4 = mkJar(3, 0.5);
+  cookWith(j4, store.invItem(j4).name, 1, 'jar');
+  check('a whole container leaves the rest part-used',
+        store.invItem(j4)?.qty === 2 && store.invItem(j4)?.remaining === 0.5,
+        `${store.invItem(j4)?.qty} / ${store.invItem(j4)?.remaining}`);
+
+  /* THE ONE THAT MATTERS: a blank amount must not delete anything */
+  const j5 = mkJar(1, null);
+  const blankRes = cookWith(j5, store.invItem(j5).name, null, 'jar');
+  check('a blank amount leaves the item alone', !!store.invItem(j5));
+  check('and its count is untouched', store.invItem(j5)?.qty === 1,
+        String(store.invItem(j5)?.qty));
+  check('and it is reported as untracked', blankRes?.untracked?.length === 1,
+        JSON.stringify(blankRes?.untracked));
+
+  /* A unit nothing understands must not be acted on. "2 dollops" was being read as two
+     jars and emptying it. */
+  const j6 = mkJar(1, null);
+  const dollopRes = cookWith(j6, store.invItem(j6).name, 2, 'dollop');
+  check('an unknown unit leaves the item alone', !!store.invItem(j6));
+  check('an unknown unit is reported as untracked', dollopRes?.untracked?.length === 1,
+        JSON.stringify(dollopRes?.untracked));
+
+  /* Same for a mismatched standard unit: 2 pcs against 600 g is not 2 g. */
+  const gId = store.addInvItem({
+    name: 'Share chicken', qty: 600, unit: 'g', category: 'protein', locId,
+  }).id;
+  cookWith(gId, 'Share chicken', 2, 'pcs');
+  check('a mismatched unit does not subtract', store.invItem(gId)?.qty === 600,
+        String(store.invItem(gId)?.qty));
+
+  /* A blank unit is an older ingredient and still means the item's own. */
+  const legacyId = store.addInvItem({
+    name: 'Share legacy', qty: 500, unit: 'g', category: 'cupboard', locId,
+  }).id;
+  cookWith(legacyId, 'Share legacy', 100, '');
+  check('a blank unit still draws down', store.invItem(legacyId)?.qty === 400,
+        String(store.invItem(legacyId)?.qty));
+
+  const butterId = store.addInvItem({
+    name: 'Share butter', qty: 250, unit: 'g', category: 'dairy', locId,
+  }).id;
+  cookWith(butterId, 'Share butter', 50, 'g');
+  check('grams still subtract', store.invItem(butterId)?.qty === 200,
+        String(store.invItem(butterId)?.qty));
+  check('and gain no remaining', store.invItem(butterId)?.remaining == null,
+        String(store.invItem(butterId)?.remaining));
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });

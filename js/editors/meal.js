@@ -210,7 +210,11 @@ export function openMealEditor({ date, mealId, after, startAt = null }) {
         after?.();
         closeSheet();
         const n = res?.used.length || 0;
-        toast(n ? `Logged — ${plural(n, 'item')} drawn from stock` : 'Logged as eaten', {
+        const skipped = res?.untracked.length || 0;
+        const parts = [];
+        if (n) parts.push(`${plural(n, 'item')} drawn from stock`);
+        if (skipped) parts.push(`${plural(skipped, 'item')} left alone — no amount given`);
+        toast(parts.length ? `Logged — ${parts.join(', ')}` : 'Logged as eaten', {
           iconName: 'flame',
           action: { label: 'Undo', run: () => { store.undo(); after?.(); } },
         });

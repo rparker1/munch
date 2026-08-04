@@ -656,12 +656,36 @@ export function copySlot(from, to) {
  * Mark a meal cooked and draw down the inventory it used.
  * Returns a plain-language summary of what changed.
  */
+/**
+ * Take `share` containers-worth off an item, keeping qty a whole count of containers.
+ *
+ * `remaining` describes the container currently open, so what is actually in stock is
+ * (qty - 1) + remaining. Recomputing both from that total is what stops qty ever becoming
+ * 0.8 of a loaf, which never meant anything.
+ */
+function applyShare(it, share, emptied) {
+  const qty = Number(it.qty);
+  if (!isFinite(qty) || qty <= 0) { emptied.push(it.id); return; }
+
+  const open = Number(it.remaining == null ? 1 : it.remaining);
+  const total = (qty - 1) + (isFinite(open) ? open : 1);
+  const left = Math.round((total - share) * 100) / 100;
+
+  if (left <= 0) { emptied.push(it.id); return; }
+
+  it.qty = Math.ceil(left);
+  const rem = Math.round((left - (it.qty - 1)) * 100) / 100;
+  // A full container is "not part-used", which is null rather than 1.
+  it.remaining = rem >= 1 ? null : rem;
+}
+
 export function cookSlot(date, mealId) {
   const s = slot(date, mealId);
   if (!s) return null;
   snapshot('Meal marked as eaten');
 
   const used = [];
+  const untracked = [];
   const emptied = [];
 
   for (const ing of s.items || []) {
@@ -670,24 +694,46 @@ export function cookSlot(date, mealId) {
     if (!it) continue;
 
     const take = Number(ing.qty);
-    const have = Number(it.qty);
+    const usable = isFinite(take) && take > 0;
+    const per = Number(it.portionPer);
+    // Only ever draw down when the units agree. A blank unit is an older ingredient and
+    // is taken to mean the item's own. Anything else is a number we cannot interpret, and
+    // acting on it would silently destroy stock: "2 dollops" of a jar was being read as
+    // two jars and emptying it.
+    const sameUnit = !ing.unit || ing.unit === it.unit;
 
-    if (isFinite(take) && take > 0 && isFinite(have)) {
-      const left = Math.round((have - take) * 100) / 100;
-      it.qty = Math.max(0, left);
+    // 1. Helpings of a container: "2 slices" of a twenty-slice loaf.
+    if (usable && it.portionName && ing.unit === it.portionName && per > 0) {
+      applyShare(it, take / per, emptied);
+      used.push({ name: it.name, took: take, unit: it.portionName });
+      continue;
+    }
+
+    // 2. Whole containers, through the same arithmetic. For a whole number this agrees
+    // with a plain subtraction; what it adds is that qty can never come out fractional.
+    if (usable && sameUnit && PARTABLE.has(it.unit)) {
+      applyShare(it, take, emptied);
+      used.push({ name: it.name, took: take, unit: it.unit });
+      continue;
+    }
+
+    // 3. Anything else measurable. `remaining` means nothing for 600 g of chicken.
+    if (usable && sameUnit && isFinite(Number(it.qty))) {
+      it.qty = Math.max(0, Math.round((Number(it.qty) - take) * 100) / 100);
       used.push({ name: it.name, took: take, unit: it.unit });
       if (it.qty <= 0) emptied.push(it.id);
-    } else {
-      // No usable quantity on either side — treat the item as finished.
-      emptied.push(it.id);
-      used.push({ name: it.name, took: null, unit: it.unit });
+      continue;
     }
+
+    // 4. Nothing usable. Leave it alone and say so. This used to delete the item, so
+    // "marmalade on toast" with no amount threw away the whole jar.
+    untracked.push({ name: it.name });
   }
 
   if (emptied.length) state.inventory = state.inventory.filter(i => !emptied.includes(i.id));
   s.done = true;
   commit();
-  return { used, emptiedCount: emptied.length };
+  return { used, untracked, emptiedCount: emptied.length };
 }
 
 export function uncookSlot(date, mealId) {
