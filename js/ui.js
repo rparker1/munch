@@ -48,6 +48,7 @@ export function openSheet({ title, body, mount, dismiss, confirm = null }) {
   document.body.style.overflow = 'hidden';
   if (mount) mount(bodyEl);
   bindSelectAll(bodyEl);
+  bindSliders(bodyEl);
   // Focus the first real control, but never auto-open the keyboard on iOS.
   // preventScroll is load-bearing: the panel is mid-`rise` here, so letting the
   // browser scroll the input into view leaves the body scrolled to the bottom.
@@ -97,6 +98,7 @@ export function setSheet({ title, body, mount }) {
   bodyEl.scrollTop = 0;
   if (mount) mount(bodyEl);
   bindSelectAll(bodyEl);
+  bindSliders(bodyEl);
 }
 
 /* --- toaster ------------------------------------------------------------ */
@@ -188,6 +190,30 @@ export function bindSelectAll(root) {
     // iOS places the caret on the tap that follows focus, undoing the selection.
     el.addEventListener('click', () => { if (armed) { all(); armed = false; } });
     el.addEventListener('blur', () => { armed = false; });
+  });
+}
+
+/**
+ * Range input over a 0–1 fraction, shown as a percentage. Reads back through
+ * `readForm()` as a 0–100 string, so callers divide by 100.
+ */
+export function slider({ name, value = 1 }) {
+  const pct = Math.round((value ?? 1) * 100);
+  return `
+    <div class="slider" data-slider="${esc(name)}">
+      <input type="range" name="${esc(name)}" min="0" max="100" step="5" value="${pct}"
+        aria-label="How much is left">
+      <span class="slider__val tnum" data-slider-val>${pct}%</span>
+    </div>`;
+}
+
+/** Keep each slider's readout in step with its input while dragging. */
+export function bindSliders(root) {
+  root.querySelectorAll('[data-slider]').forEach(wrap => {
+    const input = wrap.querySelector('input[type=range]');
+    const out = wrap.querySelector('[data-slider-val]');
+    if (!input || !out) return;
+    input.addEventListener('input', () => { out.textContent = `${input.value}%`; });
   });
 }
 

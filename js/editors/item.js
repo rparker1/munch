@@ -3,12 +3,12 @@
    ========================================================================== */
 
 import * as store from '../store.js';
-import { CATEGORIES, UNITS, PLACES } from '../store.js';
+import { CATEGORIES, UNITS, PLACES, PARTABLE } from '../store.js';
 import { esc, num, today, addDays, niceDate, expiryInfo, qtyLabel } from '../util.js';
 import { icon } from '../icons.js';
 import {
   openSheet, closeSheet, toast, confirmSheet,
-  field, textInput, textArea, select, segmented, chipGroup, bindPickers, readForm,
+  field, textInput, textArea, select, segmented, chipGroup, slider, bindPickers, bindSliders, readForm,
 } from '../ui.js';
 
 const unitOptions = UNITS.map(u => ({ value: u, label: u }));
@@ -185,6 +185,12 @@ export function openItemPeek({ id, after }) {
             <button class="iconbtn" type="button" data-bump="1" aria-label="More">${icon('plus')}</button>
           </div>
 
+          ${PARTABLE.has(cur.unit) ? `
+            <div class="field">
+              <span class="field__label">How much is left</span>
+              ${slider({ name: 'remaining', value: cur.remaining })}
+            </div>` : ''}
+
           <div class="rows">
             <div class="row" style="cursor:default">
               <span class="row__lead">${icon('pin')}</span>
@@ -228,6 +234,33 @@ export function openItemPeek({ id, after }) {
             render();
           });
         });
+        // Writes on `change`, not `input`: every commit() reindexes, persists and
+        // stamps for sync, so a drag must not fire one of those per pixel. No
+        // render() either — that reopens the sheet and would tear the slider out
+        // from under the thumb.
+        const range = root.querySelector('[data-slider=remaining] input');
+        range?.addEventListener('change', () => {
+          const frac = Number(range.value) / 100;
+          store.setRemaining(id, frac);
+          after?.();
+          if (frac !== 0) return;
+          toast(`${cur.name} is empty`, {
+            iconName: 'info',
+            action: {
+              label: 'Remove',
+              run: () => {
+                store.removeInvItem(id);
+                after?.();
+                closeSheet();
+                toast('Removed from stock', {
+                  iconName: 'trash',
+                  action: { label: 'Undo', run: () => { store.undo(); after?.(); } },
+                });
+              },
+            },
+          });
+        });
+
         root.querySelector('[data-edit]').addEventListener('click', () => {
           closeSheet();
           setTimeout(() => openItemEditor({ id, after }), 200);
