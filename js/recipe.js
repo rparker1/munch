@@ -180,6 +180,94 @@ export function parseIngredients(lines) {
   });
 }
 
+/* --- what the page says, beyond the ingredients -------------------------- */
+
+/* Tags become a space rather than nothing, so "a<br>b" reads "a b" instead of "ab".
+   That leaves a gap before punctuation — "the <b>oil</b>." gives "the oil ." — so
+   spaces ahead of punctuation are closed up afterwards. */
+const stripTags = s => String(s ?? '')
+  .replace(/<[^>]*>/g, ' ')
+  .replace(/\s+/g, ' ')
+  .replace(/\s+([.,;:!?])/g, '$1')
+  .trim();
+
+/**
+ * An ISO 8601 duration in whole minutes. PT55M -> 55, PT1H30M -> 90, P1D -> 1440.
+ *
+ * Returns null for anything unreadable *and* for a parsed zero. "No timing given" and
+ * "takes no time" are different claims, and rendering "0 min" would state something
+ * the page never did.
+ */
+export function parseDuration(iso) {
+  const m = String(iso ?? '').trim()
+    .match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i);
+  if (!m) return null;
+  const mins = Number(m[1] || 0) * 1440
+    + Number(m[2] || 0) * 60
+    + Number(m[3] || 0)
+    + Math.round(Number(m[4] || 0) / 60);
+  return mins > 0 ? mins : null;
+}
+
+/**
+ * recipeInstructions -> an ordered list of step strings.
+ *
+ * Four shapes turn up in the wild and all four have to work: HowToStep objects with
+ * .text, plain strings, one string using newlines as separators, and HowToSection
+ * wrapping itemListElement. Some sites also embed markup inside .text.
+ */
+export function normaliseMethod(instructions) {
+  const out = [];
+  const push = v => { const t = stripTags(v); if (t) out.push(t); };
+
+  const walk = node => {
+    if (node == null) return;
+    if (typeof node === 'string') { node.split(/\r?\n+/).forEach(push); return; }
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (typeof node === 'object') {
+      if (Array.isArray(node.itemListElement)) return walk(node.itemListElement);
+      if (node.text) return push(node.text);
+      if (node.name) return push(node.name);
+    }
+  };
+
+  walk(instructions);
+  return out;
+}
+
+/* Longest first, so "frying pan" is found before the generic "pan" and the generic is
+   then suppressed. Whole-word matched: a substring scan for "pan" hits "pancetta",
+   the same trap as 'ice' matching "rice" further up this file. */
+export const EQUIPMENT_WORDS = [
+  'food processor', 'roasting tin', 'baking tray', 'baking sheet', 'slow cooker',
+  'frying pan', 'air fryer', 'saucepan', 'casserole', 'colander', 'griddle',
+  'ramekin', 'steamer', 'skewers', 'blender', 'whisk', 'sieve', 'oven', 'grill',
+  'wok', 'hob', 'pan',
+];
+
+/**
+ * What you will need. The author's `tool` field when there is one — which is rare —
+ * otherwise whatever the method itself mentions.
+ *
+ * This is the only inference in the app. It earns the exception because equipment is
+ * not a quantity: an incomplete list costs nothing, and the caller labels it "From the
+ * method" so it is never passed off as the author's own.
+ */
+export function guessEquipment(method, tool) {
+  const stated = (Array.isArray(tool) ? tool : tool ? [tool] : [])
+    .map(t => stripTags(typeof t === 'string' ? t : t?.name))
+    .filter(Boolean);
+  if (stated.length) return [...new Set(stated)];
+
+  const text = (method || []).join(' ').toLowerCase();
+  const found = [];
+  for (const item of EQUIPMENT_WORDS) {
+    const re = new RegExp(`\\b${item.replace(/ /g, '\\s+')}\\b`);
+    if (re.test(text) && !found.some(f => f.includes(item))) found.push(item);
+  }
+  return found;
+}
+
 const norm = s => String(s || '').toLowerCase().trim();
 
 /**
@@ -205,9 +293,14 @@ export function searchLibrary(query, entries, inventoryNames) {
       const items = entry.items || [];
       const nameHit = !!q && norm(entry.name).includes(q);
       const ingHits = q ? items.filter(i => norm(i.name).includes(q)).length : 0;
+      const metaHit = !!q && (
+        norm(entry.cuisine).includes(q)
+        || (entry.tags || []).some(t => norm(t).includes(q))
+      );
       const inStock = items.filter(i => held(i.name)).length;
-      // A name match outweighs any number of ingredient matches.
-      const score = (nameHit ? 100 : 0) + ingHits * 10;
+      // A name match outweighs everything; a tag or cuisine match sits between a name
+      // and a single ingredient, because it describes the whole dish.
+      const score = (nameHit ? 100 : 0) + (metaHit ? 25 : 0) + ingHits * 10;
       return { entry, score, inStock, total: items.length };
     })
     .filter(r => !q || r.score > 0)

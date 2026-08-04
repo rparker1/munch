@@ -280,6 +280,67 @@ const results = await page.evaluate(() => {
   check('in-stock counts are reported', tray.inStock === 2 && tray.total === 3,
         `${tray.inStock}/${tray.total}`);
 
+  /* --- 16. durations --------------------------------------------------- */
+  check('minutes', recipe.parseDuration('PT55M') === 55, String(recipe.parseDuration('PT55M')));
+  check('hours and minutes', recipe.parseDuration('PT1H30M') === 90, String(recipe.parseDuration('PT1H30M')));
+  check('whole hours', recipe.parseDuration('PT2H') === 120, String(recipe.parseDuration('PT2H')));
+  check('days', recipe.parseDuration('P1D') === 1440, String(recipe.parseDuration('P1D')));
+  /* Zero is bad data, not a fast recipe. */
+  check('a parsed zero is null', recipe.parseDuration('PT0S') === null, String(recipe.parseDuration('PT0S')));
+  check('PT0M is null', recipe.parseDuration('PT0M') === null, String(recipe.parseDuration('PT0M')));
+  check('empty is null', recipe.parseDuration('') === null, String(recipe.parseDuration('')));
+  check('undefined is null', recipe.parseDuration(undefined) === null, String(recipe.parseDuration(undefined)));
+  check('nonsense is null', recipe.parseDuration('about an hour') === null,
+        String(recipe.parseDuration('about an hour')));
+
+  /* --- 17. method normalisation, all four shapes ----------------------- */
+  const M = x => JSON.stringify(recipe.normaliseMethod(x));
+  check('HowToStep objects', M([{ '@type': 'HowToStep', text: 'Heat the oil.' },
+                                { '@type': 'HowToStep', text: 'Add the onion.' }])
+        === JSON.stringify(['Heat the oil.', 'Add the onion.']), M([{ text: 'Heat the oil.' }]));
+  check('plain strings', M(['Heat the oil.', 'Add the onion.'])
+        === JSON.stringify(['Heat the oil.', 'Add the onion.']), '');
+  check('one string with newlines', M('Heat the oil.\nAdd the onion.')
+        === JSON.stringify(['Heat the oil.', 'Add the onion.']), M('Heat the oil.\nAdd the onion.'));
+  check('HowToSection wrapping steps', M([{ '@type': 'HowToSection',
+        itemListElement: [{ '@type': 'HowToStep', text: 'Heat the oil.' }] }])
+        === JSON.stringify(['Heat the oil.']), '');
+  check('embedded HTML is stripped', M(['<p>Heat the <b>oil</b>.</p>'])
+        === JSON.stringify(['Heat the oil.']), M(['<p>Heat the <b>oil</b>.</p>']));
+  check('empty steps are dropped', M(['Heat the oil.', '', '   ', null])
+        === JSON.stringify(['Heat the oil.']), M(['Heat the oil.', '', '   ', null]));
+  check('nothing gives an empty list', M(undefined) === JSON.stringify([]), M(undefined));
+
+  /* --- 18. equipment, inferred and stated ------------------------------ */
+  const jam = ['Heat 1 tbsp olive oil in a large frying pan with a lid over a medium-high heat.',
+               'Tip in the diced onion and cook for 3-4 mins until soft.'];
+  const eq = recipe.guessEquipment(jam);
+  check('finds the frying pan', eq.includes('frying pan'), JSON.stringify(eq));
+  check('does not also list the generic pan', !eq.includes('pan'), JSON.stringify(eq));
+  check('invents nothing when no equipment is mentioned',
+        recipe.guessEquipment(['Stir everything together and serve.']).length === 0,
+        JSON.stringify(recipe.guessEquipment(['Stir everything together and serve.'])));
+  check('does not match pan inside pancetta',
+        recipe.guessEquipment(['Fry the pancetta until crisp.']).length === 0,
+        JSON.stringify(recipe.guessEquipment(['Fry the pancetta until crisp.'])));
+  check('a stated tool wins over inference',
+        JSON.stringify(recipe.guessEquipment(jam, ['Slow cooker'])) === JSON.stringify(['Slow cooker']),
+        JSON.stringify(recipe.guessEquipment(jam, ['Slow cooker'])));
+  check('a tool object is read too',
+        JSON.stringify(recipe.guessEquipment(jam, [{ name: 'Wok' }])) === JSON.stringify(['Wok']),
+        JSON.stringify(recipe.guessEquipment(jam, [{ name: 'Wok' }])));
+
+  /* --- 19. search over tags and cuisine -------------------------------- */
+  const LIB2 = [
+    { id: 'x', name: 'Jambalaya', cuisine: 'Cajun & Creole', tags: ['rice', 'one pot'], items: [{ name: 'Rice' }] },
+    { id: 'y', name: 'Omelette', cuisine: 'French', tags: ['quick'], items: [{ name: 'Eggs' }] },
+  ];
+  check('a cuisine match is found', recipe.searchLibrary('cajun', LIB2, []).some(r2 => r2.entry.id === 'x'),
+        JSON.stringify(recipe.searchLibrary('cajun', LIB2, []).map(r2 => r2.entry.id)));
+  check('a tag match is found', recipe.searchLibrary('one pot', LIB2, []).some(r2 => r2.entry.id === 'x'),
+        JSON.stringify(recipe.searchLibrary('one pot', LIB2, []).map(r2 => r2.entry.id)));
+  check('a non-match is still excluded', !recipe.searchLibrary('cajun', LIB2, []).some(r2 => r2.entry.id === 'y'));
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });
