@@ -168,12 +168,25 @@ export function field({ label, hint, control }) {
     </div>`;
 }
 
+/**
+ * A text field.
+ *
+ * iOS suggestions and autocorrect were left to chance: every field said
+ * autocomplete="off" and none of autocorrect, autocapitalize or spellcheck was set. They
+ * are stated here instead. `autocomplete` is now only suppressed on numeric and date
+ * fields — on a free-text field there was never a reason to fight the browser, and it is
+ * the likeliest thing to have been suppressing the predictive bar.
+ */
 export function textInput({
   name, value = '', placeholder = '', type = 'text',
   autofocus = false, selectOnFocus = false, attrs = '',
 }) {
+  const numeric = /inputmode="(decimal|numeric)"/.test(attrs) || type === 'date' || type === 'search';
+  const keyboard = numeric
+    ? 'autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"'
+    : 'autocorrect="on" autocapitalize="sentences" spellcheck="true"';
   return `<input class="input" type="${type}" name="${esc(name)}" value="${esc(value)}"
-    placeholder="${esc(placeholder)}" autocomplete="off" enterkeyhint="done"
+    placeholder="${esc(placeholder)}" enterkeyhint="done" ${keyboard}
     ${autofocus ? 'data-autofocus' : ''} ${selectOnFocus ? 'data-selectall' : ''} ${attrs}>`;
 }
 
@@ -219,6 +232,7 @@ export function bindSliders(root) {
 
 export function textArea({ name, value = '', placeholder = '' }) {
   return `<textarea class="textarea" name="${esc(name)}" placeholder="${esc(placeholder)}"
+    autocorrect="on" autocapitalize="sentences" spellcheck="true"
     rows="3">${esc(value)}</textarea>`;
 }
 
