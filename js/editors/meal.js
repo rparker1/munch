@@ -668,12 +668,19 @@ export function openMealEditor({ date, mealId, after }) {
       .map(p => ({ ...p, hit: bestStockMatch(p.name, draft.place) }));
     const inStock = rows.filter(row => row.hit).length;
 
+    // The rest of the page, parsed here rather than in the function.
+    const method = recipe.normaliseMethod(r.instructions);
+    const totalMin = recipe.parseDuration(r.totalTime);
+    const prepMin = recipe.parseDuration(r.prepTime);
+    const cookMin = recipe.parseDuration(r.cookTime);
+    const cuisine = recipe.decodeEntities(r.cuisine || '');
+
     const body = `
       <div class="form">
         ${field({ label: 'Recipe name', control: textInput({ name: 'name', value: r.name }) })}
 
         <p class="field__hint" style="padding:2px">
-          ${plural(rows.length, 'ingredient')} · ${inStock} already in stock${r.serves ? ` · serves ${r.serves}` : ''}${r.sourceName ? ` · from ${esc(r.sourceName)}` : ''}
+          ${plural(rows.length, 'ingredient')} · ${inStock} already in stock${r.serves ? ` · serves ${r.serves}` : ''}${totalMin ? ` · ${totalMin} min` : ''}${method.length ? ` · ${plural(method.length, 'step')}` : ''}${cuisine ? ` · ${esc(cuisine)}` : ''}${r.sourceName ? ` · from ${esc(r.sourceName)}` : ''}
         </p>
 
         <div class="rows">
@@ -732,6 +739,32 @@ export function openMealEditor({ date, mealId, after }) {
             invId: row.hit ? row.hit.id : null,
           });
         }
+        // Keep the recipe itself, not only its ingredients. Without this the Recipes
+        // collection would start empty and stay empty, however good the browsing is.
+        // mealId null so it can be used from any slot.
+        const tags = (Array.isArray(r.keywords) ? r.keywords.map(String)
+          : String(r.keywords || '').split(','))
+          .map(t => recipe.decodeEntities(t).trim())
+          .filter(Boolean);
+
+        store.saveToLibrary(null, {
+          name: draft.name || r.name,
+          place: draft.place,
+          items: rows.map(row => ({
+            name: row.name, qty: row.qty, unit: row.unit, category: row.category,
+          })),
+          method,
+          prepMin,
+          cookMin,
+          totalMin,
+          serves: r.serves,
+          cuisine,
+          tags: tags.length ? tags : null,
+          sourceName: r.sourceName,
+          sourceUrl: r.sourceUrl,
+          image: r.image,
+        });
+
         main();
         toast(`${plural(rows.length, 'ingredient')} added`, { iconName: 'check' });
       });
