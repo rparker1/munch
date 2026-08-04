@@ -213,6 +213,47 @@ const results = await page.evaluate(() => {
         JSON.stringify(parsed));
   check('parseIngredients preserves order and length', parsed.length === 2);
 
+  /* --- 14b. regressions found against a real recipe page --------------- */
+  /* Substring matching had 'ice' claiming rice, sliced and juice for the freezer. */
+  check('rice is a cupboard item, not frozen', recipe.guessCategory('Long grain rice') === 'cupboard',
+        recipe.guessCategory('Long grain rice'));
+  check('sliced does not mean frozen', recipe.guessCategory('Chorizo') === 'protein',
+        recipe.guessCategory('Chorizo'));
+  check('juice does not mean frozen', recipe.guessCategory('Orange juice') === 'drinks',
+        recipe.guessCategory('Orange juice'));
+
+  /* The head noun decides: chicken stock is stock, not chicken. */
+  check('the head noun wins', recipe.guessCategory('Chicken stock') === 'cupboard',
+        recipe.guessCategory('Chicken stock'));
+  check('but a head noun miss still scans the name',
+        recipe.guessCategory('Chicken thighs') === 'protein', recipe.guessCategory('Chicken thighs'));
+
+  /* Plenty of sites omit the comma before the preparation. */
+  check('trailing preparation is stripped without a comma',
+        P('2 chicken breasts chopped') === JSON.stringify({ qty: 2, unit: 'pcs', name: 'Chicken breasts' }),
+        P('2 chicken breasts chopped'));
+  check('two trailing preparation words are both stripped',
+        P('1 red pepper thinly sliced') === JSON.stringify({ qty: 1, unit: 'pcs', name: 'Red pepper' }),
+        P('1 red pepper thinly sliced'));
+
+  /* The unit sometimes trails the name. */
+  check('a trailing unit word is adopted',
+        P('2 garlic cloves crushed') === JSON.stringify({ qty: 2, unit: 'clove', name: 'Garlic' }),
+        P('2 garlic cloves crushed'));
+  check('a real unit is never overridden by a trailing word',
+        P('600g garlic cloves') === JSON.stringify({ qty: 600, unit: 'g', name: 'Garlic cloves' }),
+        P('600g garlic cloves'));
+
+  /* A container after a mass is noise; the mass is the useful amount. */
+  check('a container after a mass is dropped',
+        P('400g can plum tomato') === JSON.stringify({ qty: 400, unit: 'g', name: 'Plum tomato' }),
+        P('400g can plum tomato'));
+
+  /* Stripping must never empty the name. */
+  check('a name made only of preparation survives',
+        recipe.parseIngredient('2 chopped').name === 'Chopped',
+        JSON.stringify(recipe.parseIngredient('2 chopped')));
+
   /* --- 15. ranking saved meals ---------------------------------------- */
   const LIB = [
     { id: 'a', name: 'Chicken traybake', items: [{ name: 'Chicken thighs' }, { name: 'Lemons' }, { name: 'Potatoes' }] },

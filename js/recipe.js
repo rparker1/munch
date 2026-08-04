@@ -30,11 +30,27 @@ const UNIT_WORDS = [
   ['bunches', 'bunch'], ['bunch', 'bunch'],
 ];
 
-/* One table, one place to extend. First matching category wins, so a name that
-   hits two lists always lands the same way rather than depending on key order. */
+/* Trailing preparation. Stripped from the end of a name repeatedly, because plenty
+   of sites write "2 chicken breasts chopped" with no comma to split on — and
+   "Chicken breasts chopped" then matches nothing in stock. */
+const PREP_WORDS = [
+  'chopped', 'diced', 'sliced', 'crushed', 'minced', 'grated', 'halved', 'quartered',
+  'peeled', 'trimmed', 'drained', 'rinsed', 'cubed', 'shredded', 'beaten', 'melted',
+  'softened', 'cooked', 'roasted', 'toasted', 'seeded', 'deseeded', 'stoned',
+  'finely', 'roughly', 'thinly', 'thickly', 'freshly', 'lightly', 'plus', 'extra',
+];
+
+/* Containers that may lead a name once a mass has already been read, as in
+   "400g can plum tomato" — the mass is the useful amount, the word is noise. */
+const LEADING_CONTAINERS = ['can', 'cans', 'tin', 'tins', 'jar', 'jars', 'pack', 'packs',
+                            'packet', 'packets', 'bottle', 'bottles'];
+
+/* One table, one place to extend. Matched on whole words, never substrings: 'ice'
+   would otherwise match "rice", "sliced" and "juice", which it did. */
 export const CATEGORY_KEYWORDS = {
   protein: ['chicken', 'beef', 'pork', 'lamb', 'mince', 'bacon', 'sausage', 'salmon',
-            'tuna', 'cod', 'prawn', 'fish', 'thigh', 'breast', 'steak', 'tofu'],
+            'tuna', 'cod', 'prawn', 'prawns', 'fish', 'thigh', 'thighs', 'breast',
+            'breasts', 'steak', 'steaks', 'tofu', 'chorizo', 'ham'],
   produce: ['lemon', 'lime', 'orange', 'apple', 'banana', 'berry', 'berries', 'onion',
             'garlic', 'potato', 'tomato', 'carrot', 'spinach', 'pepper', 'courgette',
             'aubergine', 'broccoli', 'salad', 'lettuce', 'cucumber', 'herb', 'parsley',
@@ -47,16 +63,43 @@ export const CATEGORY_KEYWORDS = {
   drinks: ['wine', 'beer', 'juice', 'coffee', 'tea', 'squash', 'cordial'],
   snacks: ['crisps', 'chocolate', 'biscuit', 'nuts', 'crackers'],
   household: ['foil', 'clingfilm', 'washing-up', 'bin bag', 'kitchen roll'],
-  cupboard: ['rice', 'pasta', 'noodle', 'oil', 'vinegar', 'stock', 'tin', 'tinned',
-             'chickpea', 'bean', 'lentil', 'spice', 'cumin', 'paprika', 'curry',
-             'sugar', 'honey', 'soy', 'mustard', 'ketchup', 'salt', 'sauce', 'passata'],
+  cupboard: ['rice', 'pasta', 'noodle', 'noodles', 'oil', 'vinegar', 'stock', 'tin',
+             'tinned', 'chickpea', 'chickpeas', 'bean', 'beans', 'lentil', 'lentils',
+             'spice', 'spices', 'seasoning', 'cumin', 'paprika', 'curry', 'sugar',
+             'honey', 'soy', 'mustard', 'ketchup', 'salt', 'sauce', 'passata', 'stew'],
 };
 
-/** A CATEGORIES id. 'other' when nothing matches — always a real aisle the app renders. */
+const words = s => String(s || '').toLowerCase().match(/[a-z]+/g) || [];
+
+/* Whole-word, but tolerant of a simple plural: the keyword list holds 'lemon' and
+   recipes say 'lemons'. Substring matching used to cover this for free, at the cost
+   of 'ice' matching rice, sliced and juice — so the plural is handled explicitly
+   rather than by going back to substrings. Irregulars like 'berries' are listed. */
+const inList = (list, word) =>
+  list.includes(word)
+  || (word.endsWith('es') && list.includes(word.slice(0, -2)))
+  || (word.endsWith('s') && list.includes(word.slice(0, -1)));
+
+/**
+ * A CATEGORIES id. 'other' when nothing matches — always a real aisle the app renders.
+ *
+ * The head noun is tried first, then the whole name. In English the last word is
+ * what the thing *is*: "chicken stock" is stock, not chicken, and "long grain rice"
+ * is rice. Scanning left to right instead put chicken stock in the meat aisle.
+ *
+ * Matching is on whole words. Substring matching had 'ice' claiming "rice",
+ * "sliced" and "juice" for the freezer.
+ */
 export function guessCategory(name) {
-  const n = String(name || '').toLowerCase();
-  for (const [cat, words] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (words.some(w => n.includes(w))) return cat;
+  const ws = words(name);
+  if (!ws.length) return 'other';
+
+  const head = ws[ws.length - 1];
+  for (const [cat, list] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (inList(list, head)) return cat;
+  }
+  for (const [cat, list] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (ws.some(w => inList(list, w))) return cat;
   }
   return 'other';
 }
@@ -93,10 +136,37 @@ export function parseIngredient(line) {
     const re = new RegExp(`^${word}\\b\\.?\\s*`, 'i');
     if (re.test(rest)) { unit = stored; rest = rest.replace(re, ''); break; }
   }
+  const massOrVolume = ['g', 'kg', 'ml', 'L'].includes(unit);
   if (!unit) unit = 'pcs';   // a bare count
 
   // Preparation after the first comma is noise once we have an amount.
-  const name = rest.split(',')[0].replace(/^of\s+/i, '').trim();
+  let name = rest.split(',')[0].replace(/^of\s+/i, '').trim();
+
+  // "400g can plum tomato" — the mass is the useful amount; the container is noise.
+  if (massOrVolume) {
+    const first = name.split(/\s+/)[0]?.toLowerCase();
+    if (LEADING_CONTAINERS.includes(first)) name = name.split(/\s+/).slice(1).join(' ');
+  }
+
+  // Plenty of sites omit the comma: "2 chicken breasts chopped". Strip trailing
+  // preparation until none is left, or the name would disappear.
+  for (;;) {
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) break;
+    if (!PREP_WORDS.includes(parts[parts.length - 1].toLowerCase())) break;
+    name = parts.slice(0, -1).join(' ');
+  }
+
+  // "2 garlic cloves" — the unit trails the name rather than leading it. Only when
+  // no real unit was found, so "600g garlic cloves" keeps its grams.
+  if (unit === 'pcs') {
+    const parts = name.split(/\s+/).filter(Boolean);
+    const last = parts[parts.length - 1]?.toLowerCase();
+    const hit = UNIT_WORDS.find(([w]) => w === last);
+    if (hit && parts.length > 1) { unit = hit[1]; name = parts.slice(0, -1).join(' '); }
+  }
+
+  name = name.trim();
   if (!name) return { qty: null, unit: '', name: raw };
 
   return { qty, unit, name: titleCase(name) };

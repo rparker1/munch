@@ -252,6 +252,21 @@ app could keep booting the previous version for ten minutes while every workflow
 run reported success. The two symptoms are the unchanged stamp and repo furniture
 being publicly reachable, and this checks for both.
 
+`recipe-fn.mjs` checks the recipe Edge Function, and most of it is the SSRF guards
+rather than the parsing — the function fetches arbitrary URLs on request, so
+"refuses to fetch the metadata endpoint" matters more than anything about
+ingredients. It also confirms a real recipe page yields ingredient lines and that
+no raw HTML is ever returned. Plain `fetch`, nothing to install. `FN` overrides the
+endpoint and `RECIPE_URL` the page it tries.
+
+Two gaps worth stating rather than leaving implied. The 2 MB cap has no automated
+case: it needs a third-party page reliably over that size, and pinning the suite to
+someone else's page weight makes it flaky for reasons unrelated to this code. And
+the link-local case asserts refusal only — Cloudflare, in front of `supabase.co`,
+rejects any request carrying a `169.254.x.x` address in its query string before the
+function sees it, so that check cannot exercise our own guard. That guard still
+matters: a *redirect* to a link-local address never appears in a query string.
+
 ```sh
 node tests/syntax.mjs
 
@@ -265,6 +280,9 @@ SHOT_DIR=./shots node tests/smoke.mjs
 
 # after a deploy
 node tests/deployed.mjs
+
+# the recipe Edge Function, once deployed
+node tests/recipe-fn.mjs
 ```
 
 `CHROMIUM` overrides the browser binary and `BASE` the URL under test. `LIVE`
