@@ -3,7 +3,7 @@
    ========================================================================== */
 
 import * as store from '../store.js';
-import { PLACES, placeOf } from '../store.js';
+import { PLACES, placeOf, PARTABLE } from '../store.js';
 import { esc, qtyLabel, expiryInfo, initials, plural, debounce, daysFromToday } from '../util.js';
 import { icon } from '../icons.js';
 import { statbars } from '../charts.js';
@@ -223,6 +223,8 @@ function itemRow(it) {
         <span class="row__name">${esc(it.name)}</span>
         <span class="row__sub">
           ${esc(cat.label)}
+          ${PARTABLE.has(it.unit) && it.remaining != null
+            ? `<i class="dot"></i>${Math.round(it.remaining * 100)}% left` : ''}
           ${it.note ? `<i class="dot"></i>${esc(it.note.slice(0, 26))}` : ''}
         </span>
       </span>
