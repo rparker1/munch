@@ -226,12 +226,29 @@ let seen = new Map();
  * pass gets the current clock and is queued for push; without it the pass only
  * establishes a baseline (after a load, or after applying remote records that
  * already carry their own clock).
+ *
+ * Either way, a record the server has never seen is queued. A stamp is set on
+ * exactly two occasions — when a local change is stamped here, and when a row is
+ * pulled in applyRemote — so no stamp and no tombstone means it has never been
+ * anywhere. Without this, records that appear without going through commit() are
+ * invisible to sync for ever: useAccount() creates an account's locations and then
+ * baselines them as already-seen, so a second device would pull stock referencing
+ * stores it had never heard of. Queuing them here also repairs a workspace that has
+ * already drifted, rather than only preventing the next one.
  */
 function reindex({ stamp }) {
   const now = new Date().toISOString();
   const current = new Map();
   for (const rec of walkRecords()) {
     current.set(recKey(rec.kind, rec.id), JSON.stringify(rec.payload));
+  }
+
+  for (const k of current.keys()) {
+    if (state.stamps[k] || state.tombstones[k]) continue;
+    // The clock is set as well as the flag: without it the record would be pushed,
+    // cleared from dirty, and then re-queued by the next baseline pass, for ever.
+    state.stamps[k] = now;
+    state.dirty[k] = true;
   }
 
   if (stamp) {

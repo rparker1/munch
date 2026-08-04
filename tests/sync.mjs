@@ -135,8 +135,29 @@ const results = await page.evaluate(() => {
   const accountHasPlaces = store.locations().length > 0;
   check('an account starts with no stock', accountEmpty, `${store.get().inventory.length} items`);
   check('an account still has somewhere to put things', accountHasPlaces);
-  check('an empty account queues nothing to push', store.pendingCount() === 0,
-        `${store.pendingCount()} queued`);
+
+  /* This replaces an assertion that a fresh account queues *nothing*, which was
+     wrong and had been quietly protecting a bug: useAccount creates the account's
+     locations and then baselines them as already-seen, so they were never pushed.
+     A second device would then pull stock referencing locations it had never heard
+     of. What must not be queued is the *signed-out* data — that is the leak this
+     was really guarding against, and check 11 below covers it. */
+  const freshPending = store.pendingRecords();
+  check('a fresh account queues its own places', freshPending.some(r => r.kind === 'location'),
+        JSON.stringify(freshPending.map(r => r.kind)));
+  check('a fresh account queues its settings', freshPending.some(r => r.kind === 'setting'),
+        JSON.stringify(freshPending.map(r => r.kind)));
+  check('a fresh account queues no stock, meals or recipes',
+        !freshPending.some(r => ['inventory', 'slot', 'library', 'shopping'].includes(r.kind)),
+        JSON.stringify(freshPending.map(r => r.kind)));
+  check('everything queued carries a clock', freshPending.every(r => !!r.updatedAt),
+        JSON.stringify(freshPending.map(r => r.updatedAt)));
+
+  /* And pushing them must settle: once away, they must not come straight back, or
+     every sync would re-push the same rows for ever. */
+  store.markPushed(freshPending.map(r => r.key));
+  check('pushed places do not re-queue themselves', store.pendingCount() === 0,
+        `${store.pendingCount()} still queued`);
 
   store.addInvItem({ name: 'Account apples', qty: 3, unit: 'pcs', category: 'produce',
                      locId: store.locations()[0].id });
