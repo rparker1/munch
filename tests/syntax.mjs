@@ -9,7 +9,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, copyFile, rm } from 'node:fs/promises';
+import { mkdtemp, copyFile, rm, readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
@@ -46,4 +46,23 @@ for (const f of files) {
 
 await rm(dir, { recursive: true, force: true });
 console.log(`\n${files.length - failed}/${files.length} files parse as modules`);
-process.exit(failed ? 1 : 0);
+
+/* Every module must also be in the worker's precache list.
+ *
+ * sw.js names each file explicitly, so adding a module and forgetting to list it
+ * breaks the app *only when offline* — the import fails, and because app.js pulls in
+ * the whole graph, nothing boots at all. That is a long way from where the mistake
+ * was made, and it is invisible online. Cheap to check statically, so check here. */
+const shell = await readFile('sw.js', 'utf8');
+const missing = files
+  .filter(f => f.startsWith('js/'))
+  .filter(f => !shell.includes(`'./${f}'`));
+
+if (missing.length) {
+  console.log(`\nFAIL  not in the sw.js precache list — these break an offline boot:`);
+  for (const m of missing) console.log(`      ${m}`);
+} else {
+  console.log(`${files.filter(f => f.startsWith('js/')).length} modules are all precached in sw.js`);
+}
+
+process.exit(failed || missing.length ? 1 : 0);
