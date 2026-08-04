@@ -38,6 +38,13 @@ def sd_rounded_rect(px, py, cx, cy, hw, hh, r):
     return math.hypot(ax, ay) + min(max(qx, qy), 0.0) - r
 
 
+def sd_ellipse(px, py, cx, cy, rx, ry):
+    """Cheap ellipse: the unit-circle distance scaled back. Not exact away from the
+    outline, which does not matter here — every use is a coverage test near the edge."""
+    dx, dy = (px - cx) / rx, (py - cy) / ry
+    return (math.hypot(dx, dy) - 1.0) * min(rx, ry)
+
+
 def sd_capsule(px, py, ax, ay, bx, by, r):
     pax, pay = px - ax, py - ay
     bax, bay = bx - ax, by - ay
@@ -52,43 +59,51 @@ def rotate(px, py, cx, cy, deg):
     return (dx * math.cos(a) - dy * math.sin(a), dx * math.sin(a) + dy * math.cos(a))
 
 
+def smin(a, b, k):
+    """Smooth union. A plain min() leaves a visible crease where the head meets the
+    handle; this blends them into one organic waist, which is what makes the mark read
+    as a single utensil rather than two shapes stuck together."""
+    h = max(0.0, 1.0 - abs(a - b) / k) if k > 0 else 0.0
+    return min(a, b) - h * h * k * 0.25
+
+
 # --- the mark, in a 0..1 square -------------------------------------------
-BOWL_C = (0.5, 0.545)
-BOWL_R_OUT = 0.243
-BOWL_R_IN = 0.176
-RIM_Y = 0.523
-RIM_HALF = 0.276
-RIM_T = 0.026
+# A spork: one broad head blended into a slim handle, with slots cut down from the
+# top to make the tines. Built from a handful of exact primitives rather than a
+# tapered cone, because a smooth union of a disc and a capsule gives the same
+# silhouette for a fraction of the sampling cost.
+HEAD_C = (0.5, 0.335)
+HEAD_RX = 0.176          # taller than wide, so the head reads as a bowl not a ball
+HEAD_RY = 0.212
 
-LEAF_C = (0.5, 0.258)
-LEAF_ANGLE = -36.0
-LEAF_R = 0.190
-LEAF_OFF = 0.105
+HANDLE_TOP = (0.5, 0.520)
+HANDLE_BOT = (0.5, 0.935)
+HANDLE_R = 0.053
 
+WAIST_K = 0.115          # how softly the head flows into the handle
 
-def sd_bowl(x, y):
-    cx, cy = BOWL_C
-    d_out = sd_circle(x, y, cx, cy, BOWL_R_OUT)
-    d_in = sd_circle(x, y, cx, cy, BOWL_R_IN)
-    ring = max(d_out, -d_in)
-    lower = max(ring, cy - y)  # keep the bottom half only
-    rim = sd_capsule(x, y, cx - RIM_HALF, RIM_Y, cx + RIM_HALF, RIM_Y, RIM_T)
-    return min(lower, rim)
+TINE_XS = (-0.066, 0.0, 0.066)   # three slots, so four tines
+TINE_TOP = 0.070         # above the head, so the slots open outward
+TINE_BOT = 0.352
+TINE_R = 0.0175
 
 
-def sd_leaf(x, y):
-    qx, qy = rotate(x, y, LEAF_C[0], LEAF_C[1], LEAF_ANGLE)
-    # Vesica: the lens where two offset discs overlap.
-    lens = max(
-        sd_circle(qx, qy, -LEAF_OFF, 0.0, LEAF_R),
-        sd_circle(qx, qy, LEAF_OFF, 0.0, LEAF_R),
-    )
-    midrib = sd_capsule(qx, qy, 0.0, -0.072, 0.0, 0.148, 0.0105)
-    return max(lens, -midrib)  # cut the midrib back out
+def sd_body(x, y):
+    head = sd_ellipse(x, y, HEAD_C[0], HEAD_C[1], HEAD_RX, HEAD_RY)
+    handle = sd_capsule(x, y, HANDLE_TOP[0], HANDLE_TOP[1],
+                        HANDLE_BOT[0], HANDLE_BOT[1], HANDLE_R)
+    return smin(head, handle, WAIST_K)
+
+
+def sd_tines(x, y):
+    d = 1e9
+    for dx in TINE_XS:
+        d = min(d, sd_capsule(x, y, 0.5 + dx, TINE_TOP, 0.5 + dx, TINE_BOT, TINE_R))
+    return d
 
 
 def sd_mark(x, y):
-    return min(sd_bowl(x, y), sd_leaf(x, y))
+    return max(sd_body(x, y), -sd_tines(x, y))   # cut the slots back out
 
 
 # --- background -----------------------------------------------------------
@@ -190,17 +205,16 @@ def write_svg(path: Path) -> None:
     def c(v):
         return round(v * s, 2)
 
-    cx, cy = BOWL_C
-    bowl = (
-        f"M {c(cx - BOWL_R_OUT)},{c(cy)} "
-        f"A {c(BOWL_R_OUT)},{c(BOWL_R_OUT)} 0 0 0 {c(cx + BOWL_R_OUT)},{c(cy)} "
-        f"L {c(cx + BOWL_R_IN)},{c(cy)} "
-        f"A {c(BOWL_R_IN)},{c(BOWL_R_IN)} 0 0 1 {c(cx - BOWL_R_IN)},{c(cy)} Z"
-    )
-    leaf_h = 0.158
-    leaf_w = 0.085
-    leaf = (
-        f"M 0,{c(-leaf_h)} Q {c(leaf_w)},0 0,{c(leaf_h)} Q {c(-leaf_w)},0 0,{c(-leaf_h)} Z"
+    # The mark is defined twice: as SDFs above for the PNGs, and as paths here for the
+    # vector favicon. Keep them in step. The SVG cannot express the smooth waist the
+    # smin() gives, so it overlaps a disc and a rounded handle instead — at the 16–32px
+    # a favicon is actually drawn, the difference is invisible.
+    hx, hy = HEAD_C
+    slots = "\n    ".join(
+        f'<rect x="{c(0.5 + dx - TINE_R)}" y="{c(TINE_TOP)}" '
+        f'width="{c(TINE_R * 2)}" height="{c(TINE_BOT - TINE_TOP)}" rx="{c(TINE_R)}" '
+        f'fill="url(#g)"/>'
+        for dx in TINE_XS
     )
 
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}" role="img" aria-label="Munch">
@@ -217,15 +231,12 @@ def write_svg(path: Path) -> None:
   <rect width="{s}" height="{s}" rx="{c(0.222)}" fill="url(#g)"/>
   <rect width="{s}" height="{s}" rx="{c(0.222)}" fill="url(#w)"/>
   <g fill="#{MARK[0]:02X}{MARK[1]:02X}{MARK[2]:02X}">
-    <path d="{bowl}"/>
-    <rect x="{c(cx - RIM_HALF - RIM_T)}" y="{c(RIM_Y - RIM_T)}"
-          width="{c((RIM_HALF + RIM_T) * 2)}" height="{c(RIM_T * 2)}" rx="{c(RIM_T)}"/>
-    <g transform="translate({c(LEAF_C[0])},{c(LEAF_C[1])}) rotate({LEAF_ANGLE})">
-      <path d="{leaf}"/>
-      <rect x="-0.68" y="{c(-0.072)}" width="1.36" height="{c(0.22)}" rx="0.68"
-            fill="#{MINT_LIGHT[0]:02X}{MINT_LIGHT[1]:02X}{MINT_LIGHT[2]:02X}"/>
-    </g>
+    <ellipse cx="{c(hx)}" cy="{c(hy)}" rx="{c(HEAD_RX)}" ry="{c(HEAD_RY)}"/>
+    <rect x="{c(0.5 - HANDLE_R)}" y="{c(HANDLE_TOP[1] - HANDLE_R)}"
+          width="{c(HANDLE_R * 2)}" height="{c(HANDLE_BOT[1] - HANDLE_TOP[1] + HANDLE_R * 2)}"
+          rx="{c(HANDLE_R)}"/>
   </g>
+  {slots}
 </svg>
 """
     path.write_text(svg)

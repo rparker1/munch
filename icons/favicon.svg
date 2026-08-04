@@ -12,13 +12,12 @@
   <rect width="64" height="64" rx="14.21" fill="url(#g)"/>
   <rect width="64" height="64" rx="14.21" fill="url(#w)"/>
   <g fill="#0B1F16">
-    <path d="M 16.45,34.88 A 15.55,15.55 0 0 0 47.55,34.88 L 43.26,34.88 A 11.26,11.26 0 0 1 20.74,34.88 Z"/>
-    <rect x="12.67" y="31.81"
-          width="38.66" height="3.33" rx="1.66"/>
-    <g transform="translate(32.0,16.51) rotate(-36.0)">
-      <path d="M 0,-10.11 Q 5.44,0 0,10.11 Q -5.44,0 0,-10.11 Z"/>
-      <rect x="-0.68" y="-4.61" width="1.36" height="14.08" rx="0.68"
-            fill="#B4ECCF"/>
-    </g>
+    <ellipse cx="32.0" cy="21.44" rx="11.26" ry="13.57"/>
+    <rect x="28.61" y="29.89"
+          width="6.78" height="33.34"
+          rx="3.39"/>
   </g>
+  <rect x="26.66" y="4.48" width="2.24" height="18.05" rx="1.12" fill="url(#g)"/>
+    <rect x="30.88" y="4.48" width="2.24" height="18.05" rx="1.12" fill="url(#g)"/>
+    <rect x="35.1" y="4.48" width="2.24" height="18.05" rx="1.12" fill="url(#g)"/>
 </svg>
