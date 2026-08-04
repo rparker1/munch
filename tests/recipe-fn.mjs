@@ -79,5 +79,31 @@ if (good.body.ok) {
   console.log(`SKIP  live recipe page — ${JSON.stringify(good.body)} (set RECIPE_URL to retry)`);
 }
 
+/* --- online search via TheMealDB --------------------------------------- */
+const search = await call(`q=${encodeURIComponent('chicken')}`);
+check('search returns results', search.body.ok && search.body.results?.length > 0,
+      `${search.body.results?.length} results`);
+check('results carry a numeric id and a name',
+      !!search.body.results?.every(r => /^\d+$/.test(r.id) && r.name), '');
+
+const firstId = search.body.results?.[0]?.id;
+if (firstId) {
+  const looked = await call(`id=${encodeURIComponent(firstId)}`);
+  check('lookup returns the same recipe shape as ?url=',
+        looked.body.ok && Array.isArray(looked.body.recipe?.ingredients)
+        && looked.body.recipe.ingredients.length > 0,
+        `${looked.body.recipe?.ingredients?.length} lines`);
+  check('lookup credits TheMealDB', looked.body.recipe?.sourceName === 'TheMealDB',
+        String(looked.body.recipe?.sourceName));
+  // measure and ingredient arrive as separate fields; the function joins them so the
+  // client has one parser and one input format whatever the source.
+  check('measure and ingredient are joined into one trimmed line',
+        !!looked.body.recipe?.ingredients.every(
+          l => typeof l === 'string' && l === l.trim() && l.length > 0));
+}
+
+const badId = await call('id=not-a-number');
+check('a non-numeric id is rejected', badId.body.reason === 'bad-request', JSON.stringify(badId.body));
+
 console.log(fails.length ? `\n${fails.length} FAILED: ${fails.join(', ')}` : '\nall checks passed');
 process.exit(fails.length ? 1 : 0);

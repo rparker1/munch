@@ -131,10 +131,81 @@ const asServes = (v: unknown): number | null => {
   return m ? Number(m[0]) : null;
 };
 
+/* TheMealDB is the provider because its terms permit storing what Munch stores:
+   "You can scrape, copy and modify any content returned from the API, as long as you
+   use the official end points." Spoonacular caps caching at one hour and allows only
+   id, title and image to be kept indefinitely; Edamam is narrower still. Neither can
+   back a feature whose whole point is saving the recipe. Test key '1' per their
+   guide; MEALDB_KEY overrides it if a supporter key is ever set. */
+const MEALDB = (path: string) =>
+  `https://www.themealdb.com/api/json/v1/${Deno.env.get('MEALDB_KEY') || '1'}/${path}`;
+
+async function mealdb(path: string, signal: AbortSignal) {
+  const res = await fetch(MEALDB(path), { signal });
+  if (!res.ok) throw new Error('upstream-failed');
+  return await res.json();
+}
+
+/** strIngredient1..20 + strMeasure1..20 -> "<measure> <ingredient>" lines, so the
+    client has one parser and one input format whatever the source. */
+function mealdbLines(meal: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (let i = 1; i <= 20; i++) {
+    const name = String(meal[`strIngredient${i}`] ?? '').trim();
+    if (!name) continue;
+    const measure = String(meal[`strMeasure${i}`] ?? '').trim();
+    out.push(`${measure} ${name}`.replace(/\s+/g, ' ').trim());
+  }
+  return out;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   const params = new URL(req.url).searchParams;
+  const query = params.get('q');
+  const mealId = params.get('id');
+
+  if (query || mealId) {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), TIMEOUT_MS);
+    try {
+      if (query) {
+        const data = await mealdb(`search.php?s=${encodeURIComponent(query)}`, c.signal);
+        const results = (data.meals || []).map((m: Record<string, unknown>) => ({
+          id: String(m.idMeal),
+          name: String(m.strMeal),
+          image: String(m.strMealThumb || ''),
+          area: String(m.strArea || ''),
+        }));
+        return new Response(JSON.stringify({ ok: true, results }), { headers: CORS });
+      }
+      if (!/^\d+$/.test(mealId as string)) return fail('bad-request');
+      const data = await mealdb(`lookup.php?i=${mealId}`, c.signal);
+      const meal = (data.meals || [])[0];
+      if (!meal) return fail('no-recipe', 422);
+      const ingredients = mealdbLines(meal);
+      if (!ingredients.length) return fail('no-recipe', 422);
+      return new Response(JSON.stringify({
+        ok: true,
+        recipe: {
+          name: String(meal.strMeal),
+          serves: null,
+          sourceUrl: String(meal.strSource || ''),
+          sourceName: 'TheMealDB',
+          image: String(meal.strMealThumb || ''),
+          ingredients,
+        },
+      }), { headers: CORS });
+    } catch (err) {
+      if (c.signal.aborted) return fail('timeout', 504);
+      const msg = err instanceof Error ? err.message : '';
+      return fail(msg === 'upstream-failed' ? 'upstream-failed' : 'fetch-failed', 502);
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
   const target = params.get('url');
   if (!target) return fail('bad-request');
 

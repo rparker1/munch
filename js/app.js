@@ -165,6 +165,11 @@ function openSettings() {
         </p>
 
         <p class="field__hint" style="text-align:center;margin-top:12px">
+          Online recipe search uses data from
+          <a href="https://www.themealdb.com/" target="_blank" rel="noopener">TheMealDB</a>.
+        </p>
+
+        <p class="field__hint" style="text-align:center;margin-top:12px">
           Build <span class="tnum" data-build>checking…</span>
         </p>
       </div>`,

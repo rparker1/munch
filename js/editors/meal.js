@@ -511,6 +511,10 @@ export function openMealEditor({ date, mealId, after }) {
             ${query ? 'None of your saved meals match that.' : 'No saved meals yet — import one below.'}
           </p>`}
 
+        <button class="btn btn--ghost btn--sm btn--block" type="button" data-online>
+          ${icon('search')}Search online instead
+        </button>
+
         <div class="divider" style="margin:6px 4px"></div>
 
         ${field({
@@ -537,6 +541,30 @@ export function openMealEditor({ date, mealId, after }) {
         if (e.key === 'Enter') { e.preventDefault(); findRecipe(q.value); }
       });
 
+      // Only pressing this calls the provider, so quota is spent on purpose rather
+      // than on every keystroke.
+      root.querySelector('[data-online]').addEventListener('click', async () => {
+        const text = q.value.trim();
+        if (!text) { q.focus(); return; }
+        const btn = root.querySelector('[data-online]');
+        const reset = () => { btn.disabled = false; btn.innerHTML = `${icon('search')}Search online instead`; };
+        btn.disabled = true;
+        btn.textContent = 'Searching…';
+        try {
+          const res = await fetch(`${RECIPE_FN}?q=${encodeURIComponent(text)}`);
+          const data = await res.json();
+          if (!data.ok || !data.results.length) {
+            toast('Nothing found online for that', { iconName: 'info' });
+            reset();
+            return;
+          }
+          onlineResults(text, data.results);
+        } catch {
+          toast('Could not reach the search service', { iconName: 'alert' });
+          reset();
+        }
+      });
+
       root.querySelector('[data-go]').addEventListener('click', async () => {
         const urlEl = root.querySelector('[name=url]');
         const url = urlEl.value.trim();
@@ -552,6 +580,45 @@ export function openMealEditor({ date, mealId, after }) {
         } catch {
           pasteRecipe('Could not reach the importer. You may be offline.', url);
         }
+      });
+    });
+  }
+
+  function onlineResults(query, results) {
+    const body = `
+      <div class="form">
+        <p class="field__hint" style="padding:2px">
+          ${plural(results.length, 'result')} for “${esc(query)}” · from TheMealDB
+        </p>
+        <div class="rows">
+          ${results.slice(0, 20).map(r => `
+            <button class="row" type="button" data-mealdb="${esc(r.id)}">
+              <span class="row__main">
+                <span class="row__name">${esc(r.name)}</span>
+                ${r.area ? `<span class="row__sub">${esc(r.area)}</span>` : ''}
+              </span>
+            </button>`).join('')}
+        </div>
+        <div class="sheet__foot">
+          <button class="btn btn--ghost" type="button" data-back>Back</button>
+        </div>
+      </div>`;
+
+    show('Found online', body, root => {
+      root.querySelector('[data-back]').addEventListener('click', () => findRecipe(query));
+      root.querySelectorAll('[data-mealdb]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            const res = await fetch(`${RECIPE_FN}?id=${encodeURIComponent(btn.dataset.mealdb)}`);
+            const data = await res.json();
+            if (data.ok) return reviewRecipe(data.recipe);
+            toast('Could not read that recipe', { iconName: 'alert' });
+          } catch {
+            toast('Could not reach the search service', { iconName: 'alert' });
+          }
+          btn.disabled = false;
+        });
       });
     });
   }
