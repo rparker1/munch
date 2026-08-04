@@ -7,7 +7,7 @@
 
 import * as store from '../store.js';
 import * as recipe from '../recipe.js';
-import { MEALS, CATEGORIES, UNITS, PLACES, catOf, mealOf, placeOf } from '../store.js';
+import { MEALS, CATEGORIES, UNITS, PLACES, PARTABLE, catOf, mealOf, placeOf } from '../store.js';
 import { SUPABASE } from '../config.js';
 import { esc, num, qtyLabel, niceDate, titleCase, normName, expiryInfo, initials, plural } from '../util.js';
 import { icon } from '../icons.js';
@@ -332,10 +332,14 @@ export function openMealEditor({ date, mealId, after, startAt = null }) {
                       </span>
                     </span>
                     ${on ? `
-                      <input class="input" style="width:86px;min-height:38px;padding:6px 8px;text-align:right"
-                        type="text" inputmode="decimal" value="${esc(chosen.get(it.id))}"
+                      <input class="input" style="width:74px;min-height:38px;padding:6px 8px;text-align:right"
+                        type="text" inputmode="decimal" value="${esc(chosen.get(it.id).qty)}"
                         data-qty="${esc(it.id)}" aria-label="Amount of ${esc(it.name)}">
-                      <span style="font-size:12px;color:var(--ink-3);width:30px">${esc(it.unit || '')}</span>
+                      ${PARTABLE.has(it.unit) ? `
+                        <button type="button" class="chip" data-unit="${esc(it.id)}"
+                          style="min-height:38px;padding:6px 9px"
+                          aria-label="Change the unit for ${esc(it.name)}">${esc(chosen.get(it.id).unit || '—')}</button>
+                      ` : `<span style="font-size:12px;color:var(--ink-3);width:30px">${esc(it.unit || '')}</span>`}
                     ` : `<span class="row__tail">${icon('plus')}</span>`}
                   </div>`;
               }).join('')}
@@ -375,7 +379,9 @@ export function openMealEditor({ date, mealId, after, startAt = null }) {
           if (chosen.has(id)) chosen.delete(id);
           else {
             const it = store.invItem(id);
-            chosen.set(id, it?.qty != null ? num(it.qty) : '');
+            // Default to the item's own unit and current amount, as before. The unit is
+            // carried alongside so a container can be taken by the helping instead.
+            chosen.set(id, { qty: it?.qty != null ? num(it.qty) : '', unit: it?.unit || '' });
           }
           render();
         };
@@ -391,22 +397,42 @@ export function openMealEditor({ date, mealId, after, startAt = null }) {
         });
 
         root.querySelectorAll('[data-qty]').forEach(inp => {
-          inp.addEventListener('input', () => chosen.set(inp.dataset.qty, inp.value));
+          inp.addEventListener('input', () => {
+            chosen.set(inp.dataset.qty, { ...chosen.get(inp.dataset.qty), qty: inp.value });
+          });
           inp.addEventListener('click', e => e.stopPropagation());
+        });
+
+        root.querySelectorAll('[data-unit]').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const id = btn.dataset.unit;
+            const it = store.invItem(id);
+            if (!it) return;
+            // No portion declared yet, so ask — once, and never again for this item.
+            if (!it.portionName || !(Number(it.portionPer) > 0)) return askPortion(id);
+            const cur = chosen.get(id);
+            chosen.set(id, {
+              qty: cur.qty,
+              unit: cur.unit === it.portionName ? it.unit : it.portionName,
+            });
+            render();
+          });
         });
 
         root.querySelector('[data-back]').addEventListener('click', main);
         root.querySelector('[data-add]').addEventListener('click', () => {
-          for (const [id, qty] of chosen) {
+          for (const [id, sel] of chosen) {
             const it = store.invItem(id);
             if (!it) continue;
+            const qty = sel.qty === '' ? null : Number(sel.qty);
             const existingIng = draft.items.find(i => i.invId === id);
-            if (existingIng) { existingIng.qty = qty === '' ? null : Number(qty); continue; }
+            if (existingIng) { existingIng.qty = qty; existingIng.unit = sel.unit; continue; }
             draft.items.push({
               id: newId(),
               name: it.name,
-              qty: qty === '' ? null : Number(qty),
-              unit: it.unit || '',
+              qty,
+              unit: sel.unit,
               category: it.category,
               source: 'inv',
               invId: it.id,
@@ -418,6 +444,52 @@ export function openMealEditor({ date, mealId, after, startAt = null }) {
     };
 
     render();
+  }
+
+  /* Asked the first time a container is taken by the helping rather than whole. The answer
+     goes onto the item, so it is asked once and every later meal just says "1 spoon". */
+  function askPortion(invId) {
+    const it = store.invItem(invId);
+    if (!it) return;
+
+    const hint = { loaf: 'slice', jar: 'spoon', tin: 'spoon', pack: 'piece',
+                   bottle: 'glass', bunch: 'sprig' }[it.unit] || 'portion';
+
+    const body = `
+      <div class="form">
+        <p class="field__hint" style="padding:2px">
+          To use part of ${esc(it.name)} rather than a whole ${esc(it.unit)}, Munch needs to
+          know what a helping is. It only asks once.
+        </p>
+        ${field({ label: 'One helping is a', control: textInput({
+          name: 'portionName', value: '', placeholder: hint, autofocus: true,
+        }) })}
+        ${field({ label: `How many in a ${esc(it.unit)}`, control: textInput({
+          name: 'portionPer', value: '', placeholder: 'e.g. 20', attrs: 'inputmode="numeric"',
+        }) })}
+        <div class="sheet__foot">
+          <button class="btn btn--ghost" type="button" data-back>Back</button>
+          <button class="btn" type="button" data-go>${icon('check')}Save</button>
+        </div>
+      </div>`;
+
+    show(`Helpings of ${it.name}`, body, root => {
+      root.querySelector('[data-back]').addEventListener('click', fromStock);
+      root.querySelector('[data-go]').addEventListener('click', () => {
+        const f = readForm(root);
+        const per = Number(f.portionPer);
+        if (!f.portionName || !(per > 0)) {
+          root.querySelector('[name=portionName]').focus({ preventScroll: true });
+          return;
+        }
+        store.updateInvItem(invId, { portionName: f.portionName, portionPer: per });
+        after?.();
+        // Back to a freshly built picker. The previous selection is lost, which is the
+        // honest trade for not threading picker state through a sub-step — and the item
+        // now has its portion, so re-picking is one tap.
+        fromStock();
+      });
+    });
   }
 
   /* ----------------------------------------------------------- to buy -- */
@@ -784,13 +856,20 @@ export function openMealEditor({ date, mealId, after, startAt = null }) {
     const stockHit = ing.invId ? store.invItem(ing.invId) : bestStockMatch(ing.name, draft.place);
     const canStock = !!stockHit;
 
+    // A portion name is not in UNITS, so offer the linked item's own or an edit would
+    // quietly rewrite "2 slices" as "2 pcs" by falling back to the first option.
+    const linked = ing.invId ? store.invItem(ing.invId) : null;
+    const unitOpts = linked?.portionName && !UNITS.includes(linked.portionName)
+      ? [...unitOptions, { value: linked.portionName, label: linked.portionName }]
+      : unitOptions;
+
     const body = `
       <div class="form">
         ${field({ label: 'Item', control: textInput({ name: 'name', value: ing.name }) })}
 
         <div class="grid-qty">
           ${field({ label: 'Amount', control: textInput({ name: 'qty', value: ing.qty == null ? '' : num(ing.qty), attrs: 'inputmode="decimal"' }) })}
-          ${field({ label: 'Unit', control: select({ name: 'unit', value: ing.unit, options: unitOptions }) })}
+          ${field({ label: 'Unit', control: select({ name: 'unit', value: ing.unit, options: unitOpts }) })}
         </div>
 
         ${field({
