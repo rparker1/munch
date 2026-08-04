@@ -205,7 +205,7 @@ python3 tools/make-icons.py
 
 ## Tests
 
-Three scripts, cheapest first.
+The scripts, cheapest first.
 
 `syntax.mjs` parses every JS file as an ES module. It needs no browser and no
 dependencies. **Do not replace it with `node --check foo.js`** — for a `.js` file
@@ -241,6 +241,17 @@ together — the check passes while the real page is zoomed out and the fixed ta
 bar has been pushed off screen. Comparing `innerWidth` to the device width
 catches it.
 
+`deployed.mjs` is the one to run *after* a deploy, and it needs nothing installed —
+plain `fetch`, no browser. Everything above tests the code; this tests that the
+published site is the code. `deploy.mjs` proves the cache-busting mechanism works,
+but it serves its own staged copy, so it cannot tell that production is not wired
+to use it — which is exactly what happened here. Pages was set to deploy from a
+branch rather than from the workflow, so the raw tree went out: `sw.js` shipped
+with `BUILD = 'dev'`, the `?b=` tag never changed between deploys, and an installed
+app could keep booting the previous version for ten minutes while every workflow
+run reported success. The two symptoms are the unchanged stamp and repo furniture
+being publicly reachable, and this checks for both.
+
 ```sh
 node tests/syntax.mjs
 
@@ -251,6 +262,10 @@ python3 -m http.server 8765 &
 node tests/logic.mjs
 node tests/sync.mjs
 SHOT_DIR=./shots node tests/smoke.mjs
+
+# after a deploy
+node tests/deployed.mjs
 ```
 
-`CHROMIUM` overrides the browser binary and `BASE` the URL under test.
+`CHROMIUM` overrides the browser binary and `BASE` the URL under test. `LIVE`
+overrides the deployed URL `deployed.mjs` checks.
