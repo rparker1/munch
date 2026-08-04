@@ -12,12 +12,12 @@
   <rect width="64" height="64" rx="14.21" fill="url(#g)"/>
   <rect width="64" height="64" rx="14.21" fill="url(#w)"/>
   <g fill="#0B1F16">
-    <ellipse cx="32.0" cy="21.44" rx="11.26" ry="13.57"/>
-    <rect x="28.61" y="29.89"
-          width="6.78" height="33.34"
-          rx="3.39"/>
+    <ellipse cx="32.0" cy="24.32" rx="13.06" ry="15.74"/>
+    <rect x="28.03" y="33.47"
+          width="7.94" height="38.98"
+          rx="3.97"/>
   </g>
-  <rect x="26.66" y="4.48" width="2.24" height="18.05" rx="1.12" fill="url(#g)"/>
-    <rect x="30.88" y="4.48" width="2.24" height="18.05" rx="1.12" fill="url(#g)"/>
-    <rect x="35.1" y="4.48" width="2.24" height="18.05" rx="1.12" fill="url(#g)"/>
+  <rect x="26.18" y="3.84" width="2.18" height="19.2" rx="1.09" fill="url(#g)"/>
+    <rect x="30.91" y="3.84" width="2.18" height="19.2" rx="1.09" fill="url(#g)"/>
+    <rect x="35.65" y="3.84" width="2.18" height="19.2" rx="1.09" fill="url(#g)"/>
 </svg>

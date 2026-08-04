@@ -72,20 +72,24 @@ def smin(a, b, k):
 # top to make the tines. Built from a handful of exact primitives rather than a
 # tapered cone, because a smooth union of a disc and a capsule gives the same
 # silhouette for a fraction of the sampling cost.
-HEAD_C = (0.5, 0.335)
-HEAD_RX = 0.176          # taller than wide, so the head reads as a bowl not a ball
-HEAD_RY = 0.212
+#
+# The head is the subject and sits centred; the handle runs off the bottom edge
+# rather than stopping inside the frame. HANDLE_BOT is past 1.0 on purpose — the
+# plate clips it, so the handle is cut off square instead of showing a rounded tip.
+HEAD_C = (0.5, 0.380)
+HEAD_RX = 0.204          # taller than wide, so the head reads as a bowl not a ball
+HEAD_RY = 0.246
 
-HANDLE_TOP = (0.5, 0.520)
-HANDLE_BOT = (0.5, 0.935)
-HANDLE_R = 0.053
+HANDLE_TOP = (0.5, 0.585)
+HANDLE_BOT = (0.5, 1.070)   # deliberately off the bottom of the square
+HANDLE_R = 0.062
 
-WAIST_K = 0.115          # how softly the head flows into the handle
+WAIST_K = 0.125          # how softly the head flows into the handle
 
-TINE_XS = (-0.066, 0.0, 0.066)   # three slots, so four tines
-TINE_TOP = 0.070         # above the head, so the slots open outward
-TINE_BOT = 0.352
-TINE_R = 0.0175
+TINE_XS = (-0.074, 0.0, 0.074)   # three slots, so four tines
+TINE_TOP = 0.060         # above the head, so the slots open outward
+TINE_BOT = 0.360
+TINE_R = 0.017
 
 
 def sd_body(x, y):
