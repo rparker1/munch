@@ -22,7 +22,7 @@ const unitOptions = ['', ...UNITS].map(u => ({ value: u, label: u || 'no unit' }
 const catOptions  = CATEGORIES.map(c => ({ id: c.id, label: c.label }));
 
 /** Open the editor for one slot. `after` runs on any change so views refresh. */
-export function openMealEditor({ date, mealId, after }) {
+export function openMealEditor({ date, mealId, after, startAt = null }) {
   const meal = mealOf(mealId);
   const existing = store.slot(date, mealId);
 
@@ -833,7 +833,10 @@ export function openMealEditor({ date, mealId, after }) {
     });
   }
 
-  main();
+  // The Recipes tab sends people straight to the import step rather than duplicating
+  // the flow, so honour that here at the one place the editor decides where to open.
+  if (startAt === 'recipe') findRecipe();
+  else main();
 }
 
 function newId() {

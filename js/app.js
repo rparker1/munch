@@ -17,11 +17,12 @@ import {
 } from './ui.js';
 
 import today from './views/today.js';
+import recipes from './views/recipes.js';
 import inventory from './views/inventory.js';
 import plan from './views/plan.js';
 import shop from './views/shop.js';
 
-const VIEWS = [today, plan, inventory, shop];
+const VIEWS = [today, plan, recipes, inventory, shop];
 const byId = id => VIEWS.find(v => v.id === id) || VIEWS[0];
 
 const els = {

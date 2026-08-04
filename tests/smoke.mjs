@@ -34,7 +34,12 @@ if (errors.length) {
   await browser.close();
   process.exit(1);
 }
-if (await page.locator('.tab').count() !== 4) {
+// Not pinned to an exact number. This check exists to prove the shell came up, and
+// hardcoding the tab count meant adding a tab failed here with a message pointing at
+// the wrong thing entirely. Whether each individual view renders is covered by the
+// layout loop below, which names them.
+const tabCount = await page.locator('.tab').count();
+if (tabCount === 0) {
   console.log('BOOT FAILED: the tab bar did not render — the app did not start.');
   await browser.close();
   process.exit(1);
@@ -141,8 +146,14 @@ await page.waitForTimeout(200);
 await page.locator('#viewActions [data-act=settings]').click();
 await page.waitForTimeout(400);
 await shot('17-settings');
+
 await page.click('.sheet__close');
 await page.waitForTimeout(250);
+
+// Recipes — the collection, with whatever has been imported into it
+await page.click('[data-view=recipes]');
+await page.waitForTimeout(350);
+await shot('24-recipes');
 
 // Persistence across reload
 await page.reload({ waitUntil: 'networkidle' });
@@ -188,7 +199,7 @@ await shot('23-empty-stock');
 // tab bar has been pushed off screen. Comparing innerWidth to the device width
 // catches it, and listing what pokes past the edge says why.
 const DEVICE_W = 393;
-for (const v of ['today', 'plan', 'inventory', 'shop']) {
+for (const v of ['today', 'plan', 'recipes', 'inventory', 'shop']) {
   await page.click(`[data-view=${v}]`, { force: true });
   await page.waitForTimeout(250);
   const o = await page.evaluate(() => {
@@ -213,7 +224,7 @@ for (const v of ['today', 'plan', 'inventory', 'shop']) {
 }
 
 // The tab bar must be genuinely tappable by touch, not just present in the DOM.
-for (const v of ['plan', 'inventory', 'shop', 'today']) {
+for (const v of ['plan', 'recipes', 'inventory', 'shop', 'today']) {
   try {
     await page.tap(`[data-view=${v}]`, { timeout: 4000 });
     await page.waitForTimeout(200);
