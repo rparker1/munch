@@ -159,6 +159,86 @@ const results = await page.evaluate(() => {
   check('PARTABLE includes every container unit',
         ['pack', 'tin', 'bottle', 'loaf', 'bunch'].every(u => store.PARTABLE.has(u)));
 
+  /* --- 14. recipe ingredient parsing ---------------------------------- */
+  const { recipe } = window.munch;
+  const P = line => JSON.stringify(recipe.parseIngredient(line));
+
+  check('grams', P('600g skinless chicken thighs') ===
+        JSON.stringify({ qty: 600, unit: 'g', name: 'Skinless chicken thighs' }), P('600g skinless chicken thighs'));
+  check('grams with a space', P('600 g chicken thighs') ===
+        JSON.stringify({ qty: 600, unit: 'g', name: 'Chicken thighs' }), P('600 g chicken thighs'));
+  check('tablespoons', P('2 tbsp olive oil') ===
+        JSON.stringify({ qty: 2, unit: 'tbsp', name: 'Olive oil' }), P('2 tbsp olive oil'));
+  check('spelled-out tablespoons', P('2 tablespoons olive oil') ===
+        JSON.stringify({ qty: 2, unit: 'tbsp', name: 'Olive oil' }), P('2 tablespoons olive oil'));
+  check('teaspoons', P('1 tsp ground cumin') ===
+        JSON.stringify({ qty: 1, unit: 'tsp', name: 'Ground cumin' }), P('1 tsp ground cumin'));
+  check('cloves', P('3 cloves garlic, crushed') ===
+        JSON.stringify({ qty: 3, unit: 'clove', name: 'Garlic' }), P('3 cloves garlic, crushed'));
+  check('a tin with a pack size', P('1 x 400g tin chopped tomatoes') ===
+        JSON.stringify({ qty: 1, unit: 'tin', name: 'Chopped tomatoes' }), P('1 x 400g tin chopped tomatoes'));
+  check('cans read as tins', P('2 cans chickpeas, drained') ===
+        JSON.stringify({ qty: 2, unit: 'tin', name: 'Chickpeas' }), P('2 cans chickpeas, drained'));
+  check('litres normalise to L', P('1 litre chicken stock') ===
+        JSON.stringify({ qty: 1, unit: 'L', name: 'Chicken stock' }), P('1 litre chicken stock'));
+  check('kilos', P('1.5kg potatoes') ===
+        JSON.stringify({ qty: 1.5, unit: 'kg', name: 'Potatoes' }), P('1.5kg potatoes'));
+  check('a bare count is pcs', P('2 lemons, halved') ===
+        JSON.stringify({ qty: 2, unit: 'pcs', name: 'Lemons' }), P('2 lemons, halved'));
+
+  /* Unreadable amounts keep the line intact, commas and all. */
+  check('a handful keeps its wording', P('A good handful of parsley') ===
+        JSON.stringify({ qty: null, unit: '', name: 'A good handful of parsley' }),
+        P('A good handful of parsley'));
+  check('to taste keeps its comma', P('Salt and pepper, to taste') ===
+        JSON.stringify({ qty: null, unit: '', name: 'Salt and pepper, to taste' }),
+        P('Salt and pepper, to taste'));
+
+  /* Never invent a conversion. */
+  check('no unit is ever converted',
+        recipe.parseIngredient('2 tbsp olive oil').unit === 'tbsp' &&
+        recipe.parseIngredient('1 tsp cumin').unit === 'tsp');
+
+  /* Aisles */
+  check('guesses protein', recipe.guessCategory('Chicken thighs') === 'protein');
+  check('guesses produce', recipe.guessCategory('Lemons') === 'produce');
+  check('guesses dairy', recipe.guessCategory('Greek yoghurt') === 'dairy');
+  check('unknown names fall back to other', recipe.guessCategory('Ras el hanout') === 'other');
+
+  /* The list wrapper attaches the aisle */
+  const parsed = recipe.parseIngredients(['600g chicken thighs', 'Salt, to taste']);
+  // The aisle is still guessed for a line whose amount could not be read.
+  check('parseIngredients attaches a category',
+        parsed[0].category === 'protein' && parsed[1].category === 'cupboard',
+        JSON.stringify(parsed));
+  check('parseIngredients preserves order and length', parsed.length === 2);
+
+  /* --- 15. ranking saved meals ---------------------------------------- */
+  const LIB = [
+    { id: 'a', name: 'Chicken traybake', items: [{ name: 'Chicken thighs' }, { name: 'Lemons' }, { name: 'Potatoes' }] },
+    { id: 'b', name: 'Lemon pilaf',      items: [{ name: 'Rice' }, { name: 'Lemons' }] },
+    { id: 'c', name: 'Bean chilli',      items: [{ name: 'Beans' }, { name: 'Tomatoes' }] },
+  ];
+  const STOCK = ['Chicken thighs', 'Lemons', 'Rice'];
+
+  let r = recipe.searchLibrary('chicken', LIB, STOCK);
+  check('a name match ranks first', r[0]?.entry.id === 'a', JSON.stringify(r.map(x => x.entry.id)));
+  check('non-matching meals are excluded', !r.some(x => x.entry.id === 'c'),
+        JSON.stringify(r.map(x => x.entry.id)));
+
+  r = recipe.searchLibrary('lemons', LIB, STOCK);
+  check('an ingredient match counts', r.some(x => x.entry.id === 'a') && r.some(x => x.entry.id === 'b'),
+        JSON.stringify(r.map(x => x.entry.id)));
+  check('the fuller larder wins the tie-break', r[0]?.entry.id === 'b',
+        JSON.stringify(r.map(x => `${x.entry.id}:${x.inStock}/${x.total}`)));
+
+  r = recipe.searchLibrary('', LIB, STOCK);
+  check('an empty query returns everything', r.length === 3, String(r.length));
+
+  const tray = recipe.searchLibrary('chicken', LIB, STOCK)[0];
+  check('in-stock counts are reported', tray.inStock === 2 && tray.total === 3,
+        `${tray.inStock}/${tray.total}`);
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });

@@ -6,6 +6,7 @@
 import * as store from './store.js';
 import * as cloud from './cloud.js';
 import * as sync from './sync.js';
+import * as recipe from './recipe.js';
 import { cloudConfigured } from './config.js';
 import { PLACES, placeOf } from './store.js';
 import { $, esc, plural, haptic } from './util.js';
@@ -589,4 +590,4 @@ window.addEventListener('hashchange', () => {
 });
 
 // A tiny hook for debugging from Safari's console.
-window.munch = { store, cloud, sync, refresh: () => render(), go: navigate };
+window.munch = { store, cloud, sync, recipe, refresh: () => render(), go: navigate };

@@ -37,7 +37,11 @@ export const CATEGORIES = [
   { id: 'other',    label: 'Other',        colour: '#8F8F8F' },
 ];
 
-export const UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'bunch', 'loaf', 'bottle'];
+// tbsp/tsp/clove are appended rather than inserted so the existing order of the
+// unit dropdown is unchanged. None of them is a part-usable container, so PARTABLE
+// below deliberately does not gain them.
+export const UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'bunch', 'loaf', 'bottle',
+                      'tbsp', 'tsp', 'clove'];
 
 /**
  * Units where a part-used fraction means something physical. Grams and millilitres
