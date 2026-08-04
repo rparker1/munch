@@ -73,6 +73,12 @@ if (good.body.ok) {
         r.ingredients.every(l => typeof l === 'string' && l.trim().length > 0));
   check('reports the source', !!r.sourceName && r.sourceUrl === REAL, String(r.sourceName));
   check('returns no raw HTML', !JSON.stringify(good.body).includes('<script'));
+  check('returns raw instructions', r.instructions != null, typeof r.instructions);
+  check('returns a raw ISO total time', /^PT/i.test(r.totalTime || ''), String(r.totalTime));
+  check('returns a cuisine', typeof r.cuisine === 'string' && r.cuisine.length > 0, r.cuisine);
+  // The whole point of passthrough: the client owns every parser, so a parsing fix
+  // never needs a redeploy. A number here would mean the server had parsed it.
+  check('parses none of it server-side', typeof r.totalTime === 'string', typeof r.totalTime);
 } else {
   // A live third-party page may bot-block, which is not our bug. Say so loudly
   // rather than failing the suite on someone else's WAF.
@@ -100,6 +106,14 @@ if (firstId) {
   check('measure and ingredient are joined into one trimmed line',
         !!looked.body.recipe?.ingredients.every(
           l => typeof l === 'string' && l === l.trim() && l.length > 0));
+  check('lookup returns instructions as one string',
+        typeof looked.body.recipe?.instructions === 'string'
+        && looked.body.recipe.instructions.length > 0,
+        `${String(looked.body.recipe?.instructions).length} chars`);
+  check('lookup reports no timings, rather than zero',
+        looked.body.recipe?.totalTime === null, String(looked.body.recipe?.totalTime));
+  check('lookup reports an area as the cuisine',
+        typeof looked.body.recipe?.cuisine === 'string', String(looked.body.recipe?.cuisine));
 }
 
 const badId = await call('id=not-a-number');

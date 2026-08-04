@@ -195,6 +195,17 @@ Deno.serve(async (req: Request) => {
           sourceName: 'TheMealDB',
           image: String(meal.strMealThumb || ''),
           ingredients,
+          // strInstructions is one string with newlines, which normaliseMethod already
+          // handles as one of its four shapes. TheMealDB publishes no timings, so null
+          // rather than zero: "not given" and "takes no time" are different claims.
+          instructions: String(meal.strInstructions || '') || null,
+          totalTime: null,
+          prepTime: null,
+          cookTime: null,
+          cuisine: String(meal.strArea || ''),
+          category: String(meal.strCategory || ''),
+          keywords: String(meal.strTags || '') || null,
+          tool: null,
         },
       }), { headers: CORS });
     } catch (err) {
@@ -252,6 +263,16 @@ Deno.serve(async (req: Request) => {
         sourceName: siteName || safe.hostname.replace(/^www\./, ''),
         image: firstString(found.image),
         ingredients,
+        // Raw and unparsed on purpose: js/recipe.js owns every parser, so a fix there
+        // needs no redeploy.
+        instructions: found.recipeInstructions ?? null,
+        totalTime: firstString(found.totalTime) || null,
+        prepTime: firstString(found.prepTime) || null,
+        cookTime: firstString(found.cookTime) || null,
+        cuisine: firstString(found.recipeCuisine),
+        category: firstString(found.recipeCategory),
+        keywords: found.keywords ?? null,
+        tool: found.tool ?? null,
       },
     }), { headers: CORS });
   } catch (err) {

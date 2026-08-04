@@ -341,6 +341,27 @@ const results = await page.evaluate(() => {
         JSON.stringify(recipe.searchLibrary('one pot', LIB2, []).map(r2 => r2.entry.id)));
   check('a non-match is still excluded', !recipe.searchLibrary('cajun', LIB2, []).some(r2 => r2.entry.id === 'y'));
 
+  /* --- 19b. HTML entities, found in real JSON-LD ------------------------ */
+  /* BBC Good Food publishes its cuisine as "Cajun &amp; Creole". The app escapes on
+     render, so an undecoded entity reaches the screen as "&amp;". */
+  check('named entities decode', recipe.decodeEntities('Cajun &amp; Creole') === 'Cajun & Creole',
+        recipe.decodeEntities('Cajun &amp; Creole'));
+  check('numeric entities decode', recipe.decodeEntities('30&#176;C') === '30°C',
+        recipe.decodeEntities('30&#176;C'));
+  check('hex entities decode', recipe.decodeEntities('caf&#xe9;') === 'café',
+        recipe.decodeEntities('caf&#xe9;'));
+  check('fractions decode', recipe.decodeEntities('&frac12; tsp') === '½ tsp',
+        recipe.decodeEntities('&frac12; tsp'));
+  check('an unknown entity is left alone', recipe.decodeEntities('a &notreal; b') === 'a &notreal; b',
+        recipe.decodeEntities('a &notreal; b'));
+  check('method steps get decoded too',
+        recipe.normaliseMethod(['Heat &amp; stir'])[0] === 'Heat & stir',
+        JSON.stringify(recipe.normaliseMethod(['Heat &amp; stir'])));
+  /* Decoded last, so an escaped tag in the text is never mistaken for a real one. */
+  check('an escaped tag is not treated as markup',
+        recipe.normaliseMethod(['Use &lt;b&gt; tags'])[0] === 'Use <b> tags',
+        JSON.stringify(recipe.normaliseMethod(['Use &lt;b&gt; tags'])));
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });

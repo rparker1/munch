@@ -182,14 +182,39 @@ export function parseIngredients(lines) {
 
 /* --- what the page says, beyond the ingredients -------------------------- */
 
+const ENTITIES = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  frac12: '½', frac14: '¼', frac34: '¾', deg: '°', hellip: '…',
+  rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', ndash: '–', mdash: '—',
+};
+
+/**
+ * Decode HTML entities. Pages publish them inside JSON-LD — BBC Good Food's cuisine
+ * is literally "Cajun &amp; Creole" — and because the app escapes on render, an
+ * undecoded entity shows up on screen as "&amp;" rather than "&".
+ *
+ * Done with a table rather than the DOM so this module stays pure and testable.
+ */
+export function decodeEntities(s) {
+  return String(s ?? '').replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, (whole, code) => {
+    if (code[0] === '#') {
+      const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) && n > 0 ? String.fromCodePoint(n) : whole;
+    }
+    const hit = ENTITIES[code.toLowerCase()];
+    return hit === undefined ? whole : hit;
+  });
+}
+
 /* Tags become a space rather than nothing, so "a<br>b" reads "a b" instead of "ab".
    That leaves a gap before punctuation — "the <b>oil</b>." gives "the oil ." — so
-   spaces ahead of punctuation are closed up afterwards. */
-const stripTags = s => String(s ?? '')
+   spaces ahead of punctuation are closed up afterwards. Entities are decoded last, so
+   an escaped "&lt;b&gt;" in the text is never mistaken for a tag. */
+const stripTags = s => decodeEntities(String(s ?? '')
   .replace(/<[^>]*>/g, ' ')
   .replace(/\s+/g, ' ')
   .replace(/\s+([.,;:!?])/g, '$1')
-  .trim();
+  .trim());
 
 /**
  * An ISO 8601 duration in whole minutes. PT55M -> 55, PT1H30M -> 90, P1D -> 1440.
