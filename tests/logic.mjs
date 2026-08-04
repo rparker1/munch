@@ -362,6 +362,36 @@ const results = await page.evaluate(() => {
         recipe.normaliseMethod(['Use &lt;b&gt; tags'])[0] === 'Use <b> tags',
         JSON.stringify(recipe.normaliseMethod(['Use &lt;b&gt; tags'])));
 
+  /* --- 20. recipes belong to any slot ---------------------------------- */
+  const rec = store.saveToLibrary(null, {
+    name: 'Test jambalaya', place: 'home',
+    items: [{ name: 'Rice', qty: 250, unit: 'g', category: 'cupboard' }],
+    method: ['Heat the oil.', 'Add the rice.'],
+    prepMin: 10, cookMin: 45, totalMin: 55,
+    serves: 4, cuisine: 'Cajun & Creole', tags: ['one pot'],
+    sourceName: 'Good Food', sourceUrl: 'https://example.com/j', image: 'https://example.com/j.jpg',
+  });
+  check('a recipe saves with no meal type', rec.mealId === null, JSON.stringify(rec.mealId));
+  check('the method is kept', rec.method?.length === 2, JSON.stringify(rec.method));
+  check('the timings are kept', rec.totalMin === 55 && rec.prepMin === 10 && rec.cookMin === 45,
+        `${rec.prepMin}/${rec.cookMin}/${rec.totalMin}`);
+  check('the cuisine and tags are kept', rec.cuisine === 'Cajun & Creole' && rec.tags[0] === 'one pot',
+        JSON.stringify([rec.cuisine, rec.tags]));
+  check('the source is kept', rec.sourceName === 'Good Food', String(rec.sourceName));
+
+  check('a null-meal recipe is offered for dinner', store.library('dinner').some(l => l.id === rec.id));
+  check('and for breakfast too', store.library('breakfast').some(l => l.id === rec.id));
+  check('and appears in the whole collection', store.library().some(l => l.id === rec.id));
+
+  const tied = store.saveToLibrary('dinner', { name: 'Test tied meal', place: 'home', items: [] });
+  check('a meal-typed entry still filters', store.library('dinner').some(l => l.id === tied.id)
+        && !store.library('breakfast').some(l => l.id === tied.id));
+
+  /* Entries saved before this change carry none of the new fields and must stay valid. */
+  check('an entry without a method is still returned',
+        store.library('dinner').some(l => l.id === tied.id && l.method === undefined),
+        JSON.stringify(store.library('dinner').find(l => l.id === tied.id)?.method));
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });

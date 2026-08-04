@@ -688,11 +688,19 @@ export function uncookSlot(date, mealId) {
 
 /* --- write: meal library ----------------------------------------------- */
 
+/**
+ * Keep a meal or a recipe.
+ *
+ * `mealId` null means a recipe rather than a meal template: it is not tied to
+ * breakfast, lunch or dinner, so library() offers it for any of them. Every field
+ * beyond name/place/items is optional and stored only when supplied, which is what
+ * keeps entries saved before this existed valid and untouched.
+ */
 export function saveToLibrary(mealId, data) {
   const entry = {
     id: uid('lib'),
     name: titleCase(data.name || 'Meal'),
-    mealId,
+    mealId: mealId || null,
     place: data.place || 'home',
     items: (data.items || []).map(i => ({
       name: titleCase(i.name),
@@ -701,15 +709,29 @@ export function saveToLibrary(mealId, data) {
       category: i.category || 'other',
     })),
   };
-  // Replace any same-named entry for this meal type rather than piling up.
-  state.library = state.library.filter(l => !(l.mealId === mealId && normName(l.name) === normName(entry.name)));
+
+  // Only what we were given, so an old entry never gains empty fields and a record
+  // round-tripped through an older build is not filled with nulls.
+  for (const key of ['method', 'prepMin', 'cookMin', 'totalMin', 'serves',
+                     'cuisine', 'tags', 'sourceName', 'sourceUrl', 'image']) {
+    if (data[key] != null) entry[key] = data[key];
+  }
+
+  // Replace a same-named entry of the same kind rather than piling up.
+  state.library = state.library.filter(
+    l => !(l.mealId === entry.mealId && normName(l.name) === normName(entry.name)),
+  );
   state.library.unshift(entry);
-  state.library = state.library.slice(0, 60);
+  // 200 rather than 60: this is a recipe collection now, not a few slot templates.
+  state.library = state.library.slice(0, 200);
   commit();
   return entry;
 }
 
-export const library = mealId => state.library.filter(l => !mealId || l.mealId === mealId);
+/** Everything, or everything a given meal slot can use. */
+export const library = mealId => state.library.filter(
+  l => !mealId || l.mealId === mealId || l.mealId == null,
+);
 
 export function removeFromLibrary(id) {
   state.library = state.library.filter(l => l.id !== id);
