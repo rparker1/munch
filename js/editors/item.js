@@ -14,6 +14,33 @@ import {
 const unitOptions = UNITS.map(u => ({ value: u, label: u }));
 const catOptions  = CATEGORIES.map(c => ({ id: c.id, label: c.label }));
 
+/* Suggestions only. Nothing is pre-filled: a pre-filled 20 would be Munch claiming to
+   know how many slices are in your loaf, and the count has to come from the user. */
+const PORTION_HINT = {
+  loaf: 'slice', jar: 'spoon', tin: 'spoon', pack: 'piece',
+  bottle: 'glass', bunch: 'sprig',
+};
+
+/** The part-used slider plus, for a container, what one helping of it is. */
+function partBlock(start, unit) {
+  if (!PARTABLE.has(unit)) return '';
+  return `
+    ${field({ label: 'How much is left', control: slider({ name: 'remaining', value: start.remaining }) })}
+    <div class="grid-qty">
+      ${field({ label: 'One helping is a', control: textInput({
+        name: 'portionName', value: start.portionName || '',
+        placeholder: PORTION_HINT[unit] || 'portion',
+      }) })}
+      ${field({ label: `How many in a ${esc(unit)}`, control: textInput({
+        name: 'portionPer', value: start.portionPer === '' || start.portionPer == null ? '' : num(start.portionPer),
+        placeholder: 'e.g. 20', attrs: 'inputmode="numeric"',
+      }) })}
+    </div>
+    <span class="field__hint">
+      Optional. Set it and a meal can say “2 slices” instead of a fraction of the whole thing.
+    </span>`;
+}
+
 const QUICK_DATES = [
   { days: 1,  label: 'Tomorrow' },
   { days: 3,  label: '3 days' },
@@ -37,6 +64,8 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
     qty: prefill.qty ?? '',
     unit: prefill.unit || 'pcs',
     remaining: prefill.remaining ?? null,
+    portionName: prefill.portionName || '',
+    portionPer: prefill.portionPer ?? '',
     category: prefill.category || 'produce',
     locId: prefill.locId || locs[0]?.id,
     useBy: prefill.useBy || '',
@@ -61,12 +90,7 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
         ${field({ label: 'Unit', control: select({ name: 'unit', value: start.unit, options: unitOptions }) })}
       </div>
 
-      <div data-remwrap>
-        ${PARTABLE.has(start.unit) ? field({
-          label: 'How much is left',
-          control: slider({ name: 'remaining', value: start.remaining }),
-        }) : ''}
-      </div>
+      <div data-remwrap>${partBlock(start, start.unit)}</div>
 
       ${field({ label: 'Aisle', control: chipGroup({ name: 'category', value: start.category, options: catOptions }) })}
 
@@ -126,11 +150,16 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
       unitSel.addEventListener('change', () => {
         const shown = !!remWrap.querySelector('input[type=range]');
         if (PARTABLE.has(unitSel.value)) {
-          if (shown) return;
-          remWrap.innerHTML = field({
-            label: 'How much is left',
-            control: slider({ name: 'remaining', value: start.remaining }),
-          });
+          // Rebuilt even when already shown, because "how many in a jar" and the portion
+          // placeholder both name the unit. Whatever is on screen is carried across, so
+          // switching jar -> tin relabels without wiping what was typed.
+          const range = remWrap.querySelector('[name=remaining]');
+          const live = {
+            remaining: range ? Number(range.value) / 100 : start.remaining,
+            portionName: remWrap.querySelector('[name=portionName]')?.value ?? start.portionName,
+            portionPer: remWrap.querySelector('[name=portionPer]')?.value ?? start.portionPer,
+          };
+          remWrap.innerHTML = partBlock(live, unitSel.value);
           bindSliders(remWrap);
         } else if (shown) {
           remWrap.innerHTML = '';
@@ -159,6 +188,12 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
         // Absent means the slider was not on screen, which must leave any stored
         // fraction alone rather than clearing it.
         if (f.remaining !== undefined) patch.remaining = Number(f.remaining) / 100;
+        // Same rule as the slider: absent means the controls were not on screen, which
+        // must leave a stored portion alone rather than clearing it.
+        if (f.portionName !== undefined) patch.portionName = f.portionName || null;
+        if (f.portionPer !== undefined) {
+          patch.portionPer = f.portionPer === '' ? null : Number(f.portionPer);
+        }
         if (item) store.updateInvItem(item.id, patch);
         else store.addInvItem(patch);
         closeSheet();
