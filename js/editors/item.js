@@ -36,6 +36,7 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
     name: prefill.name || '',
     qty: prefill.qty ?? '',
     unit: prefill.unit || 'pcs',
+    remaining: prefill.remaining ?? null,
     category: prefill.category || 'produce',
     locId: prefill.locId || locs[0]?.id,
     useBy: prefill.useBy || '',
@@ -58,6 +59,13 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
           placeholder: '0', selectOnFocus: true, attrs: 'inputmode="decimal"',
         }) })}
         ${field({ label: 'Unit', control: select({ name: 'unit', value: start.unit, options: unitOptions }) })}
+      </div>
+
+      <div data-remwrap>
+        ${PARTABLE.has(start.unit) ? field({
+          label: 'How much is left',
+          control: slider({ name: 'remaining', value: start.remaining }),
+        }) : ''}
       </div>
 
       ${field({ label: 'Aisle', control: chipGroup({ name: 'category', value: start.category, options: catOptions }) })}
@@ -110,6 +118,25 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
         bindPickers(wrap);
       });
 
+      // Removed from the DOM rather than hidden, so readForm() cannot see it — that
+      // is what lets a stored fraction survive a trip through a non-partable unit
+      // instead of being cleared on save.
+      const unitSel = root.querySelector('[name=unit]');
+      const remWrap = root.querySelector('[data-remwrap]');
+      unitSel.addEventListener('change', () => {
+        const shown = !!remWrap.querySelector('input[type=range]');
+        if (PARTABLE.has(unitSel.value)) {
+          if (shown) return;
+          remWrap.innerHTML = field({
+            label: 'How much is left',
+            control: slider({ name: 'remaining', value: start.remaining }),
+          });
+          bindSliders(remWrap);
+        } else if (shown) {
+          remWrap.innerHTML = '';
+        }
+      });
+
       root.querySelectorAll('[data-quick]').forEach(btn => {
         btn.addEventListener('click', () => {
           const d = btn.dataset.quick;
@@ -129,6 +156,9 @@ export function openItemEditor({ id = null, prefill = {}, after }) {
           useBy: f.useBy,
           note: f.note,
         };
+        // Absent means the slider was not on screen, which must leave any stored
+        // fraction alone rather than clearing it.
+        if (f.remaining !== undefined) patch.remaining = Number(f.remaining) / 100;
         if (item) store.updateInvItem(item.id, patch);
         else store.addInvItem(patch);
         closeSheet();
