@@ -392,6 +392,43 @@ const results = await page.evaluate(() => {
         store.library('dinner').some(l => l.id === tied.id && l.method === undefined),
         JSON.stringify(store.library('dinner').find(l => l.id === tied.id)?.method));
 
+  /* --- 21. jar, portions, and how amounts read ------------------------- */
+  check('jar is a unit', store.UNITS.includes('jar'));
+  check('jar is part-usable', store.PARTABLE.has('jar'));
+
+  const jarId = store.addInvItem({
+    name: 'Test marmalade', qty: 1, unit: 'jar', category: 'cupboard', locId,
+    portionName: 'spoon', portionPer: 30,
+  }).id;
+  check('a portion name is kept', store.invItem(jarId).portionName === 'spoon',
+        String(store.invItem(jarId).portionName));
+  check('a portion count is kept', store.invItem(jarId).portionPer === 30,
+        String(store.invItem(jarId).portionPer));
+  check('a portion name never enters UNITS', !store.UNITS.includes('spoon'));
+
+  store.updateInvItem(jarId, { note: 'opened' });
+  check('an unrelated edit keeps the portion', store.invItem(jarId).portionName === 'spoon');
+
+  const plainId = store.addInvItem({
+    name: 'Test flour', qty: 500, unit: 'g', category: 'cupboard', locId,
+  }).id;
+  check('an item without portions has none', store.invItem(plainId).portionName == null,
+        String(store.invItem(plainId).portionName));
+
+  /* A word the user typed pluralises; an abbreviation does not. */
+  const QL = window.munch.util.qtyLabel;
+  check('a portion name pluralises', QL(2, 'slice') === '2 slices', QL(2, 'slice'));
+  check('one portion does not pluralise', QL(1, 'slice') === '1 slice', QL(1, 'slice'));
+  check('a standard unit is left alone', QL(2, 'tin') === '2 tin', QL(2, 'tin'));
+  check('grams are left alone', QL(500, 'g') === '500 g', QL(500, 'g'));
+  check('pcs still shows the bare number', QL(3, 'pcs') === '3', QL(3, 'pcs'));
+
+  /* The two lists live in different modules to avoid a store <-> util import cycle, so
+     assert they agree rather than trusting them to. */
+  check('every unit is known to the renderer',
+        store.UNITS.every(u => window.munch.util.STANDARD_UNITS.includes(u)),
+        JSON.stringify(store.UNITS.filter(u => !window.munch.util.STANDARD_UNITS.includes(u))));
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });

@@ -40,15 +40,15 @@ export const CATEGORIES = [
 // tbsp/tsp/clove are appended rather than inserted so the existing order of the
 // unit dropdown is unchanged. None of them is a part-usable container, so PARTABLE
 // below deliberately does not gain them.
-export const UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'bunch', 'loaf', 'bottle',
-                      'tbsp', 'tsp', 'clove'];
+export const UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'jar', 'bunch', 'loaf',
+                      'bottle', 'tbsp', 'tsp', 'clove'];
 
 /**
  * Units where a part-used fraction means something physical. Grams and millilitres
  * are already exact, and three apples at 65% is nonsense — so both the slider and
  * every display of the value are gated on this one set, and cannot disagree.
  */
-export const PARTABLE = new Set(['pack', 'tin', 'bottle', 'loaf', 'bunch']);
+export const PARTABLE = new Set(['pack', 'tin', 'jar', 'bottle', 'loaf', 'bunch']);
 
 /** 0–1, two decimal places. Anything unparseable becomes null. */
 const clampFrac = v => {
@@ -526,6 +526,11 @@ export function addInvItem(data) {
     qty: data.qty === '' || data.qty == null ? null : Number(data.qty),
     unit: data.unit || 'pcs',
     remaining: clampFrac(data.remaining),
+    // What one helping of this container is called, and how many are in it. Declared by
+    // the user, never guessed — this is what lets a meal say "1 spoon" without the app
+    // converting anything.
+    portionName: data.portionName ? String(data.portionName).trim() : null,
+    portionPer: Number(data.portionPer) > 0 ? Number(data.portionPer) : null,
     category: data.category || 'other',
     locId: data.locId || state.locations[0]?.id || null,
     useBy: data.useBy || '',
@@ -544,6 +549,12 @@ export function updateInvItem(id, patch) {
   if (patch.name) it.name = titleCase(patch.name);
   if ('qty' in patch) it.qty = patch.qty === '' || patch.qty == null ? null : Number(patch.qty);
   if ('remaining' in patch) it.remaining = clampFrac(patch.remaining);
+  if ('portionName' in patch) {
+    it.portionName = patch.portionName ? String(patch.portionName).trim() : null;
+  }
+  if ('portionPer' in patch) {
+    it.portionPer = Number(patch.portionPer) > 0 ? Number(patch.portionPer) : null;
+  }
   commit();
   return it;
 }

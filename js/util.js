@@ -126,12 +126,25 @@ export function num(v) {
   return String(Math.round(n * 100) / 100);
 }
 
-/** "500 g", "2 × tin", "3 pcs". */
+/**
+ * Units that read as abbreviations and must not be pluralised: "500 g", not "500 gs".
+ *
+ * Duplicated from store.js's UNITS on purpose — store.js imports util.js, so importing
+ * back would make a cycle. tests/logic.mjs asserts the two agree, so drift is caught
+ * rather than discovered.
+ */
+export const STANDARD_UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'jar', 'bunch',
+                               'loaf', 'bottle', 'tbsp', 'tsp', 'clove'];
+
+/** "500 g", "2 tin", "3 pcs", "2 slices". */
 export function qtyLabel(qty, unit) {
   const q = num(qty);
   if (!q || Number(q) === 0) return '';
   if (!unit || unit === 'pcs') return q;
-  return `${q} ${unit}`;
+  // A portion name is a word the user typed, so it pluralises. A standard unit is an
+  // abbreviation and stays as it is, and one of anything is singular either way.
+  const word = STANDARD_UNITS.includes(unit) || Number(q) === 1 ? unit : `${unit}s`;
+  return `${q} ${word}`;
 }
 
 /** Comparison key for merging shopping lines. */
