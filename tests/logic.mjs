@@ -113,6 +113,52 @@ const results = await page.evaluate(() => {
                      useBy: iso(new Date(Date.now() - 2 * 864e5)) });
   check('overdue stock is reported as expiring', store.expiring(0).some(i => i.name === 'Old milk'));
 
+  /* --- 13. part-used fraction ----------------------------------------- */
+  const tinId = store.addInvItem({
+    name: 'Test tin', qty: 1, unit: 'tin', category: 'cupboard', locId,
+  }).id;
+  check('a new item starts with no fraction', store.invItem(tinId).remaining === null,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  store.setRemaining(tinId, 0.65);
+  check('setRemaining stores the fraction', store.invItem(tinId).remaining === 0.65,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  store.setRemaining(tinId, 1.4);
+  check('setRemaining clamps above 1', store.invItem(tinId).remaining === 1,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  store.setRemaining(tinId, -0.2);
+  check('setRemaining clamps below 0', store.invItem(tinId).remaining === 0,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  store.setRemaining(tinId, 0.6666);
+  check('setRemaining rounds to 2dp', store.invItem(tinId).remaining === 0.67,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  store.setRemaining(tinId, null);
+  check('setRemaining clears back to null', store.invItem(tinId).remaining === null,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  /* 0% is a resting state, not a deletion */
+  store.setRemaining(tinId, 0);
+  check('an empty item stays in stock', !!store.invItem(tinId));
+
+  /* an edit that does not mention the fraction must not wipe it */
+  store.setRemaining(tinId, 0.5);
+  store.updateInvItem(tinId, { note: 'opened Tuesday' });
+  check('editing another field keeps the fraction', store.invItem(tinId).remaining === 0.5,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  /* switching to a non-partable unit hides it but must not destroy it */
+  store.updateInvItem(tinId, { unit: 'g' });
+  check('a non-partable unit keeps the stored fraction', store.invItem(tinId).remaining === 0.5,
+        `remaining=${store.invItem(tinId).remaining}`);
+
+  check('PARTABLE excludes g and pcs', !store.PARTABLE.has('g') && !store.PARTABLE.has('pcs'));
+  check('PARTABLE includes every container unit',
+        ['pack', 'tin', 'bottle', 'loaf', 'bunch'].every(u => store.PARTABLE.has(u)));
+
   /* --- 12. the shared list survives a reload -------------------------- */
   return out;
 });
@@ -126,7 +172,12 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(300);
 const persisted = await page.evaluate(() => {
   const s = window.munch.store.get();
-  return s.inventory.some(i => i.name === 'Desk oats') && s.settings.horizonDays === 30;
+  // Deliberately distinctive: the seed data ships a 'Chopped tomatoes' tin, and
+  // find() would match that one — which has no fraction — instead of ours.
+  const tin = s.inventory.find(i => i.name === 'Test tin');
+  return s.inventory.some(i => i.name === 'Desk oats')
+      && s.settings.horizonDays === 30
+      && tin?.remaining === 0.5;
 });
 console.log(`${persisted ? 'PASS' : 'FAIL'}  state and settings survive a reload`);
 

@@ -39,6 +39,21 @@ export const CATEGORIES = [
 
 export const UNITS = ['pcs', 'g', 'kg', 'ml', 'L', 'pack', 'tin', 'bunch', 'loaf', 'bottle'];
 
+/**
+ * Units where a part-used fraction means something physical. Grams and millilitres
+ * are already exact, and three apples at 65% is nonsense — so both the slider and
+ * every display of the value are gated on this one set, and cannot disagree.
+ */
+export const PARTABLE = new Set(['pack', 'tin', 'bottle', 'loaf', 'bunch']);
+
+/** 0–1, two decimal places. Anything unparseable becomes null. */
+const clampFrac = v => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!isFinite(n)) return null;
+  return Math.round(Math.min(1, Math.max(0, n)) * 100) / 100;
+};
+
 export const PLACES = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'work', label: 'Work', icon: 'briefcase' },
@@ -489,6 +504,7 @@ export function addInvItem(data) {
     name: titleCase(data.name || 'Item'),
     qty: data.qty === '' || data.qty == null ? null : Number(data.qty),
     unit: data.unit || 'pcs',
+    remaining: clampFrac(data.remaining),
     category: data.category || 'other',
     locId: data.locId || state.locations[0]?.id || null,
     useBy: data.useBy || '',
@@ -506,6 +522,7 @@ export function updateInvItem(id, patch) {
   Object.assign(it, patch);
   if (patch.name) it.name = titleCase(patch.name);
   if ('qty' in patch) it.qty = patch.qty === '' || patch.qty == null ? null : Number(patch.qty);
+  if ('remaining' in patch) it.remaining = clampFrac(patch.remaining);
   commit();
   return it;
 }
@@ -533,6 +550,20 @@ export function bumpQty(id, delta) {
   const step = it.unit === 'g' || it.unit === 'ml' ? 50 : 1;
   const base = Number(it.qty) || 0;
   it.qty = Math.max(0, Math.round((base + delta * step) * 100) / 100);
+  commit();
+  return it;
+}
+
+/**
+ * How much of a part-used container is left, 0–1. `null` means "not part-used",
+ * which is how every item starts and is indistinguishable from one saved before
+ * this field existed. No snapshot(): a slider drag is not a destructive act, so
+ * it stays off the undo stack, same as bumpQty.
+ */
+export function setRemaining(id, frac) {
+  const it = invItem(id);
+  if (!it) return null;
+  it.remaining = clampFrac(frac);
   commit();
   return it;
 }
